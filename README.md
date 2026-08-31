@@ -1,4 +1,4 @@
-# av-test
+# pdd-frontend
 
 Стек:
 - Vue 3
