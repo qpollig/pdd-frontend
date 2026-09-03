@@ -33,7 +33,7 @@ function categoryLabel(category: TicketCategory): string {
     <p class="mt-1 text-sm text-text-secondary">Выбор билета или темы · без ограничения времени</p>
 
     <div
-      class="mt-4 inline-flex gap-0.5 rounded-pill border border-border bg-surface-raised p-0.5"
+      class="mt-4 inline-flex gap-0.5 rounded-pill border border-border bg-surface p-0.5"
       role="group"
       aria-label="Способ группировки билетов"
     >
