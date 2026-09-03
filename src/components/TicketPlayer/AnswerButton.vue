@@ -1,6 +1,7 @@
 <script setup lang="ts">
 export type AnswerVariant =
   | 'default'
+  | 'selected'
   | 'correct'
   | 'incorrect'
   | 'correct-muted'
@@ -20,6 +21,7 @@ defineEmits<{ click: [] }>();
     :class="[
       variant === 'default' &&
         'cursor-pointer border-border bg-surface text-text-primary shadow-sm hover:border-accent hover:bg-accent/5 active:bg-accent/10',
+      variant === 'selected' && 'border-accent bg-accent/10 text-text-primary',
       variant === 'correct' && 'border-correct bg-correct/10 text-text-primary',
       variant === 'incorrect' && 'border-incorrect bg-incorrect/10 text-text-primary',
       variant === 'correct-muted' && 'border-correct bg-white text-text-primary',
