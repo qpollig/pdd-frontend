@@ -1,36 +1,21 @@
 # pdd-frontend
 
-Стек:
-- Vue 3
-- TypeScript
-- Vite
-- Tailwind CSS v4
-- Pinia
+B2C frontend подготовки к экзамену ПДД (Vue 3 + Vite + Tailwind + Pinia).
 
-## Описание
-
-Адаптивный интерактивный компонент «Плеер решения билета ПДД».
-
-## Функциональность
-
-- навигация 1–20;
-- выбор ответа;
-- correct/incorrect;
-- избранное;
-- изображения;
-- 3D-Видеоразбор / Paywall;
-- responsive mobile/desktop.
-
-## Источник данных
-
-https://github.com/etspring/pdd_russia
-
-`src/data/ticket-1.json` соответствует исходному `Билет 1.json`.
+Продуктовые требования: `docs/tz_v1_5_study_pdd.docx`.
+Состояние этапа 1 (shell): `docs/B2C_IMPLEMENTATION.md`.
 
 ## Команды
 
 ```bash
 npm install
 npm run dev
+npm run lint
+npm run typecheck
+npm run test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
+
+Приложение на dev-сервере: `/`.

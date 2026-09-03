@@ -15,7 +15,10 @@ dist-ssr
 .env.*
 !.env.example
 
-# Editor directories and files
+test-results
+playwright-report
+blob-report
+playwright/.cache
 .vscode
 .idea
 .DS_Store
