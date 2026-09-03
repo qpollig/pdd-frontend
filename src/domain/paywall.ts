@@ -43,3 +43,12 @@ export function subscriptionStatusLabel(status: SubscriptionStatus): string {
   if (status === 'cancelled') return 'Отменена';
   return 'Просрочен платёж';
 }
+
+/** Formats an ISO `YYYY-MM-DD` (`paid_until`) as a localized Russian date, e.g. "4 сентября 2026". */
+export function formatRuDate(dateStr: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  if (!match) return dateStr;
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(date);
+}

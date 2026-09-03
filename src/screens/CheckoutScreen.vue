@@ -7,7 +7,8 @@ import AppButton from '../components/ui/AppButton.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import { canSubmitCheckout, checkoutKind, checkoutPayLabel } from '../domain/checkout';
-import { premiumActiveHeadline } from '../domain/paywall';
+import { formatRuDate, premiumActiveHeadline } from '../domain/paywall';
+import { fadeUp, popIn } from '../motion/variants';
 import { useSessionStore } from '../stores/sessionStore';
 
 const session = useSessionStore();
@@ -63,6 +64,9 @@ async function pay() {
     <div v-else-if="kind === 'success'" class="min-w-0" data-testid="checkout-success">
       <h1 class="text-xl font-semibold sm:text-2xl">Оформление</h1>
       <span
+        v-motion
+        :initial="popIn().initial"
+        :enter="popIn().enter"
         class="mt-4 flex h-12 w-12 items-center justify-center rounded-full bg-correct text-white"
         aria-hidden="true"
       >
@@ -79,7 +83,7 @@ async function pay() {
         v-if="session.subscription?.paid_until"
         class="mt-3 text-sm leading-relaxed text-text-secondary"
       >
-        Подписка активна до: {{ session.subscription.paid_until }}.
+        Подписка активна до: {{ formatRuDate(session.subscription.paid_until) }}.
       </p>
       <AppButton
         class="mt-6 w-full sm:w-auto"
@@ -93,7 +97,7 @@ async function pay() {
     <div v-else-if="session.premiumOffer" class="min-w-0">
       <h1 class="text-xl font-semibold sm:text-2xl">Оформление</h1>
 
-      <div class="mt-4 min-w-0">
+      <div v-motion :initial="fadeUp().initial" :enter="fadeUp().enter" class="mt-4 min-w-0">
         <PricingCard :offer="session.premiumOffer" />
       </div>
 
@@ -112,7 +116,12 @@ async function pay() {
         />
       </div>
 
-      <div class="mt-6 min-w-0">
+      <div
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(60).enter"
+        class="mt-6 min-w-0"
+      >
         <CheckoutForm :disabled="payDisabled || kind === 'processing'" @submit="pay">
           <template #default="{ canPay }">
             <AppButton

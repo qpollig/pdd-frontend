@@ -23,14 +23,17 @@ export interface FixtureQuestion {
 
 export type Ticket = FixtureQuestion[];
 
-/** ТЗ §4.3 session/start mode. На этом этапе: theory | errors | exam (gibdd_exam). */
-export type TicketMode = 'theory' | 'errors' | 'exam';
+/** ТЗ §4.3 session/start mode. На этом этапе: theory | errors | exam (gibdd_exam) | favorites. */
+export type TicketMode = 'theory' | 'errors' | 'exam' | 'favorites';
 
 /** Синтетический id прогресса плеера для Errors. Не uuid билета. */
 export const ERRORS_SESSION_TICKET_ID = 'errors-session';
 
 /** Синтетический id прогресса плеера для Exam. Не uuid билета. */
 export const EXAM_SESSION_TICKET_ID = 'exam-gibdd';
+
+/** Синтетический id прогресса плеера для Favorites. Не uuid билета. */
+export const FAVORITES_SESSION_TICKET_ID = 'favorites-session';
 
 export type AnswerStatus = 'unanswered' | 'answered' | 'correct' | 'incorrect';
 

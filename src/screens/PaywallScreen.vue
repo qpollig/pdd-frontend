@@ -6,11 +6,13 @@ import AppButton from '../components/ui/AppButton.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import {
+  formatRuDate,
   paywallKind,
   paywallPrimaryCta,
   premiumActiveHeadline,
   showsPurchaseCta,
 } from '../domain/paywall';
+import { fadeUp, staggerDelay } from '../motion/variants';
 import { useSessionStore } from '../stores/sessionStore';
 
 const session = useSessionStore();
@@ -46,7 +48,7 @@ function goPrimary() {
 </script>
 
 <template>
-  <div class="min-w-0 max-w-xl">
+  <div class="min-w-0">
     <AppSpinner v-if="kind === 'loading'" label="Загрузка тарифа" />
 
     <ErrorState
@@ -73,7 +75,7 @@ function goPrimary() {
         Статус:
         {{ session.subscription.status === 'trialing' ? 'пробный период' : 'активная подписка' }}.
         Оплачено до:
-        {{ session.subscription.paid_until }}.
+        {{ formatRuDate(session.subscription.paid_until) }}.
       </p>
       <AppButton class="mt-6 w-full sm:w-auto" @click="goPrimary">
         {{ primaryCta?.label }}
@@ -81,7 +83,17 @@ function goPrimary() {
     </div>
 
     <div v-else-if="kind === 'free' && session.premiumOffer" class="min-w-0">
-      <h1 class="text-xl font-semibold sm:text-2xl">Premium</h1>
+      <button
+        type="button"
+        class="inline-flex min-h-11 cursor-pointer items-center gap-1.5 rounded-pill px-2 -ml-2 text-sm font-medium text-text-secondary outline-none transition duration-200 ease-out hover:bg-surface-raised hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+        @click="router.push({ name: 'dashboard' })"
+      >
+        <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Назад
+      </button>
+      <h1 class="mt-2 text-xl font-semibold sm:text-2xl">Premium</h1>
       <h2 class="mt-4 text-lg font-semibold leading-snug sm:text-xl">
         Premium: без ограничений по жизням
       </h2>
@@ -90,7 +102,7 @@ function goPrimary() {
         сложных ситуаций добавятся отдельно.
       </p>
 
-      <div class="mt-5 min-w-0">
+      <div v-motion :initial="fadeUp().initial" :enter="fadeUp().enter" class="mt-5 min-w-0">
         <PricingCard :offer="session.premiumOffer" />
       </div>
 
@@ -109,19 +121,34 @@ function goPrimary() {
       </p>
 
       <ul class="mt-8 space-y-3 text-sm leading-relaxed">
-        <li class="flex min-w-0 items-start gap-2.5 break-words">
+        <li
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(0)).enter"
+          class="flex min-w-0 items-start gap-2.5 break-words"
+        >
           <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-correct" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
             <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           Полное соответствие регламенту ГИБДД 2026
         </li>
-        <li class="flex min-w-0 items-start gap-2.5 break-words">
+        <li
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(1)).enter"
+          class="flex min-w-0 items-start gap-2.5 break-words"
+        >
           <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-correct" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
             <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           3D-видеоразборы каверзных ситуаций на дорогах — скоро
         </li>
-        <li class="flex min-w-0 items-start gap-2.5 break-words">
+        <li
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(2)).enter"
+          class="flex min-w-0 items-start gap-2.5 break-words"
+        >
           <svg viewBox="0 0 24 24" class="mt-0.5 h-4 w-4 shrink-0 text-correct" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
             <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -130,7 +157,13 @@ function goPrimary() {
       </ul>
 
       <div class="mt-6 grid gap-3 sm:grid-cols-2">
-        <section class="min-w-0 rounded-card border border-border bg-surface p-4" aria-label="Что доступно сейчас">
+        <section
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(3)).enter"
+          class="min-w-0 rounded-card border border-border bg-surface p-4"
+          aria-label="Что доступно сейчас"
+        >
           <div class="flex items-center gap-2">
             <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-muted text-text-secondary" aria-hidden="true">
               <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2">
@@ -149,7 +182,13 @@ function goPrimary() {
           </p>
         </section>
 
-        <section class="min-w-0 rounded-card border border-accent/30 bg-accent/10 p-4" aria-label="Что изменится после Premium">
+        <section
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(4)).enter"
+          class="min-w-0 rounded-card border border-accent/30 bg-accent/10 p-4"
+          aria-label="Что изменится после Premium"
+        >
           <div class="flex items-center gap-2">
             <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-text-on-accent" aria-hidden="true">
               <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3">
@@ -163,12 +202,6 @@ function goPrimary() {
             не воспроизводится.
           </p>
         </section>
-      </div>
-
-      <div class="mt-6">
-        <AppButton variant="ghost" class="w-full sm:w-auto" @click="router.push({ name: 'dashboard' })">
-          Назад
-        </AppButton>
       </div>
 
       <p class="mt-6 max-w-prose text-xs leading-relaxed text-text-secondary">

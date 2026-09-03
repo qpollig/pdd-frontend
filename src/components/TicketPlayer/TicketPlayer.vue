@@ -159,16 +159,11 @@ async function completeSession(status: 'finished' | 'timed_out') {
 }
 
 async function finishTicket() {
-  if (props.mode === 'exam') {
-    if (!store.isTicketComplete(props.ticketId)) return;
-    await completeSession('finished');
-    return;
-  }
   if (!store.isTicketComplete(props.ticketId)) return;
   if (props.mode === 'errors') {
     remainingErrorCount.value = await catalog.peekErrorQuestionCount();
   }
-  isResultOpen.value = true;
+  await completeSession('finished');
 }
 
 onMounted(() => {
@@ -197,6 +192,7 @@ const canFinish = computed(() => store.isTicketComplete(props.ticketId));
 const modeLabel = computed(() => {
   if (store.mode === 'theory') return 'Теория';
   if (store.mode === 'errors') return 'Ошибки';
+  if (store.mode === 'favorites') return 'Избранное';
   if (store.mode === 'exam') return 'Экзамен ГИБДД';
   return '';
 });
@@ -204,17 +200,20 @@ const explanationText = computed(() => currentQuestion.value.explanation);
 const headerTitle = computed(() => {
   if (props.mode === 'exam') return 'Экзамен ГИБДД';
   if (props.mode === 'errors') return 'Ошибки';
+  if (props.mode === 'favorites') return 'Избранное';
   if (catalog.currentTicket?.topicTitle) return catalog.currentTicket.topicTitle;
   return `Билет ${catalog.currentTicket?.number ?? ''}`;
 });
 const finishLabel = computed(() => {
   if (props.mode === 'exam') return 'Завершить экзамен';
   if (props.mode === 'errors') return 'Завершить проработку ошибок';
+  if (props.mode === 'favorites') return 'Завершить проработку избранного';
   return 'Завершить билет';
 });
 const resultTitle = computed(() => {
   if (props.mode === 'exam') return 'Результат экзамена';
   if (props.mode === 'errors') return 'Результат проработки ошибок';
+  if (props.mode === 'favorites') return 'Результат проработки избранного';
   return 'Результат билета';
 });
 const resultCorrect = computed(() => finishResult.value?.correctCount ?? ticketStats.value.correct);
@@ -372,6 +371,16 @@ function continueToPaywall() {
             {{ currentState.status === 'correct' ? 'Верно' : 'Неверно' }}
           </p>
 
+          <section
+            v-if="!concealResults && currentState.status !== 'unanswered' && explanationText"
+            class="mt-4 rounded-card border border-border bg-accent/10 p-4 text-sm leading-relaxed break-words text-text-primary"
+            role="region"
+            aria-label="Пояснение"
+          >
+            <h2 class="text-sm font-semibold">Пояснение</h2>
+            <p class="mt-2">{{ explanationText }}</p>
+          </section>
+
           <div class="mt-5 flex flex-wrap items-center justify-between gap-4">
             <FavoriteButton
               v-if="mode !== 'exam'"
@@ -387,16 +396,6 @@ function continueToPaywall() {
               </AppButton>
             </div>
           </div>
-
-          <section
-            v-if="!concealResults && currentState.status !== 'unanswered' && explanationText"
-            class="mt-4 rounded-card border border-border bg-accent/10 p-4 text-sm leading-relaxed break-words text-text-primary"
-            role="region"
-            aria-label="Пояснение"
-          >
-            <h2 class="text-sm font-semibold">Пояснение</h2>
-            <p class="mt-2">{{ explanationText }}</p>
-          </section>
 
           <div v-if="mode !== 'exam'" class="mt-5 lg:hidden">
             <MediaUnlockCta @open-paywall="openPaywall" />

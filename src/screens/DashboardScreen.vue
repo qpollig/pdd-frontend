@@ -9,6 +9,7 @@ import AppSpinner from '../components/ui/AppSpinner.vue';
 import { useCatalogStore } from '../stores/catalogStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTicketStore } from '../stores/ticketStore';
+import { fadeUp, staggerDelay } from '../motion/variants';
 
 /**
  * Frontend constant: full official ГИБДД question bank (40 tickets × 20 questions).
@@ -51,6 +52,10 @@ function openExam() {
   void router.push({ name: 'exam-gibdd' });
 }
 
+function openFavorites() {
+  void router.push({ name: 'favorites-session', query: { mode: 'favorites' } });
+}
+
 /**
  * Frontend-derived, session-only: openapi.json has no per-ticket progress endpoint, so this comes
  * from ticketStore's in-memory session progress (same source StatisticsScreen uses) rather than a
@@ -91,7 +96,12 @@ const ticketsPercent = computed(() => {
     <AppSpinner v-if="loading && !ready" />
     <ErrorState v-else-if="loadError && !ready" title="Ошибка загрузки" :description="loadError" />
     <div v-else-if="ready && session.user" class="mt-6 space-y-6">
-      <section class="relative overflow-hidden rounded-card border border-border bg-surface p-6 sm:p-8">
+      <section
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp().enter"
+        class="relative overflow-hidden rounded-card border border-border bg-surface p-6 sm:p-8"
+      >
         <svg
           class="pointer-events-none absolute -right-8 -top-8 hidden h-52 w-52 text-accent/15 sm:block"
           viewBox="0 0 200 200"
@@ -120,13 +130,27 @@ const ticketsPercent = computed(() => {
       </section>
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <ProgressWidget :current="questionsAnswered" :total="BANK_QUESTION_TOTAL" />
+        <ProgressWidget
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(0)).enter"
+          :current="questionsAnswered"
+          :total="BANK_QUESTION_TOTAL"
+        />
         <LivesCounter
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(1)).enter"
           :current="session.user.lives_current"
           :max="session.user.lives_max"
           :is-premium="session.user.is_premium"
         />
-        <section class="rounded-card border border-border bg-surface p-5">
+        <section
+          v-motion
+          :initial="fadeUp().initial"
+          :enter="fadeUp(staggerDelay(2)).enter"
+          class="rounded-card border border-border bg-surface p-5"
+        >
           <div class="flex items-center justify-between gap-2">
             <h2 class="text-sm font-medium text-text-secondary">Билеты</h2>
             <span class="text-xs font-semibold tabular-nums text-text-secondary">{{ ticketsPercent }}%</span>
@@ -138,15 +162,15 @@ const ticketsPercent = computed(() => {
           </p>
           <div class="mt-3 h-2 w-full overflow-hidden rounded-pill bg-surface-muted" role="presentation">
             <div
-              class="h-full rounded-pill bg-accent transition-[width] duration-500 ease-out"
-              :style="{ width: `${ticketsPercent}%` }"
+              class="h-full w-full origin-left rounded-pill bg-accent transition-transform duration-500 ease-out"
+              :style="{ transform: `scaleX(${ticketsPercent / 100})` }"
             />
           </div>
           <p class="mt-2 text-xs text-text-secondary">Пройдено билетов из общего набора</p>
         </section>
       </div>
 
-      <section>
+      <section v-motion :initial="fadeUp().initial" :enter="fadeUp(staggerDelay(3)).enter">
         <h2 class="text-sm font-medium text-text-secondary">Другие режимы</h2>
         <div class="mt-3 flex flex-col gap-3 sm:flex-row">
           <AppButton variant="secondary" class="w-full sm:w-auto" @click="openErrors">
@@ -164,14 +188,26 @@ const ticketsPercent = computed(() => {
             </svg>
             Экзамен ГИБДД
           </AppButton>
+          <AppButton variant="secondary" class="w-full sm:w-auto" @click="openFavorites">
+            <svg viewBox="0 0 24 24" class="mr-2 h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path
+                d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L12 3.5z"
+                stroke-linejoin="round"
+              />
+            </svg>
+            Избранное
+          </AppButton>
         </div>
       </section>
 
       <section
         v-if="!session.user.is_premium"
-        class="flex flex-col items-start gap-4 rounded-card border border-accent/30 bg-accent/10 p-5 sm:flex-row sm:items-center sm:justify-between"
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(4)).enter"
+        class="flex flex-col items-center gap-4 rounded-card border border-accent/30 bg-accent/10 p-5 sm:flex-row sm:justify-between"
       >
-        <div class="flex items-start gap-3">
+        <div class="flex items-center gap-3">
           <span
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-text-on-accent"
             aria-hidden="true"

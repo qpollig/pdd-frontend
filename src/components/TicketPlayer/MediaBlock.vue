@@ -21,7 +21,7 @@ const src = computed(() => (errored.value || !props.image ? placeholder : props.
       :src="src"
       alt=""
       class="aspect-video w-full object-cover"
-      loading="lazy"
+      fetchpriority="high"
       @error="errored = true"
     />
   </div>

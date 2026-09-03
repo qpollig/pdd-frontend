@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import ExitExamConfirmModal from '../components/TicketPlayer/ExitExamConfirmModal.vue';
 import TicketPlayer from '../components/TicketPlayer/TicketPlayer.vue';
 import AppButton from '../components/ui/AppButton.vue';
 import EmptyState from '../components/ui/EmptyState.vue';
@@ -8,30 +9,35 @@ import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import { nextTheoryTicketId, type PostSessionActionId } from '../domain/postSessionNav';
 import { useCatalogStore } from '../stores/catalogStore';
-import type { TicketMode } from '../types/ticket';
+import { useTicketStore } from '../stores/ticketStore';
+import { EXAM_SESSION_TICKET_ID, type TicketMode } from '../types/ticket';
 
 const route = useRoute();
 const router = useRouter();
 const catalog = useCatalogStore();
+const ticketStore = useTicketStore();
 const sessionGeneration = ref(0);
+const showExitExamConfirm = ref(false);
 
 function resolveMode(): TicketMode {
   if (route.name === 'exam-gibdd') return 'exam';
   if (route.name === 'errors-session' || route.query.mode === 'errors') return 'errors';
+  if (route.name === 'favorites-session' || route.query.mode === 'favorites') return 'favorites';
   return 'theory';
 }
 
 const mode = computed<TicketMode>(resolveMode);
 
-const hasErrorQuestions = computed(
+/** Dynamic session lists (Errors/Favorites) render a dedicated empty state instead of the player. */
+const hasSessionQuestions = computed(
   () => (catalog.currentTicket?.questions.length ?? 0) > 0,
 );
 
 const playerKey = computed(() => {
   if (mode.value === 'exam') return `${catalog.activeSessionId ?? 'exam'}:${sessionGeneration.value}`;
-  if (mode.value === 'errors') {
+  if (mode.value === 'errors' || mode.value === 'favorites') {
     const questionKey =
-      catalog.currentTicket?.questions.map((question) => question.id).join('|') || 'errors';
+      catalog.currentTicket?.questions.map((question) => question.id).join('|') || mode.value;
     return `${questionKey}:${sessionGeneration.value}`;
   }
   return `${catalog.currentTicket?.id ?? 'theory'}:${sessionGeneration.value}`;
@@ -46,6 +52,11 @@ async function load() {
   if (mode.value === 'errors') {
     await catalog.loadErrorQuestions();
     document.title = 'Ошибки ПДД 2026 - Проработка неверных ответов';
+    return;
+  }
+  if (mode.value === 'favorites') {
+    await catalog.loadFavoritesSession();
+    document.title = 'Избранное ПДД 2026 - Проработка отмеченных вопросов';
     return;
   }
   if (route.name === 'topic-session') {
@@ -76,11 +87,20 @@ watch(
 );
 
 function exitPlayer() {
-  if (mode.value === 'errors' || mode.value === 'exam') {
+  if (mode.value === 'exam' && ticketStore.progress[EXAM_SESSION_TICKET_ID]?.examStatus === 'in_progress') {
+    showExitExamConfirm.value = true;
+    return;
+  }
+  if (mode.value === 'errors' || mode.value === 'exam' || mode.value === 'favorites') {
     void router.push({ name: 'dashboard' });
     return;
   }
   void router.push({ name: 'tickets', query: { mode: 'theory' } });
+}
+
+function confirmExitExam() {
+  showExitExamConfirm.value = false;
+  void router.push({ name: 'dashboard' });
 }
 
 function goHome() {
@@ -129,11 +149,17 @@ function onResultNavigate(action: PostSessionActionId) {
   if (action === 'repeat-exam') {
     sessionGeneration.value += 1;
     void catalog.loadExamSession();
+    return;
+  }
+  if (action === 'repeat-favorites') {
+    sessionGeneration.value += 1;
+    void catalog.loadFavoritesSession();
   }
 }
 </script>
 
 <template>
+  <div>
   <AppSpinner v-if="catalog.loading" />
   <div v-else-if="catalog.error" class="min-h-screen bg-bg p-4">
     <ErrorState
@@ -142,7 +168,7 @@ function onResultNavigate(action: PostSessionActionId) {
     />
   </div>
   <div
-    v-else-if="mode === 'errors' && catalog.currentTicket && !hasErrorQuestions"
+    v-else-if="mode === 'errors' && catalog.currentTicket && !hasSessionQuestions"
     class="min-h-screen bg-bg px-4 py-8 text-text-primary sm:px-6"
   >
     <div class="mx-auto w-full max-w-md">
@@ -152,6 +178,24 @@ function onResultNavigate(action: PostSessionActionId) {
       >
         <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <AppButton class="w-full sm:w-auto" @click="openTheory">К теории</AppButton>
+          <AppButton variant="secondary" class="w-full sm:w-auto" @click="goHome">
+            На главную
+          </AppButton>
+        </div>
+      </EmptyState>
+    </div>
+  </div>
+  <div
+    v-else-if="mode === 'favorites' && catalog.currentTicket && !hasSessionQuestions"
+    class="min-h-screen bg-bg px-4 py-8 text-text-primary sm:px-6"
+  >
+    <div class="mx-auto w-full max-w-md">
+      <EmptyState
+        title="Пока нет избранных вопросов"
+        description="Отмечайте вопросы звёздочкой во время прохождения билета — они появятся здесь."
+      >
+        <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <AppButton class="w-full sm:w-auto" @click="openTheory">К билетам</AppButton>
           <AppButton variant="secondary" class="w-full sm:w-auto" @click="goHome">
             На главную
           </AppButton>
@@ -173,7 +217,7 @@ function onResultNavigate(action: PostSessionActionId) {
     </div>
   </div>
   <TicketPlayer
-    v-else-if="catalog.currentTicket"
+    v-else-if="catalog.currentTicket && catalog.currentTicket.questions.length > 0"
     :key="playerKey"
     :ticket-id="catalog.currentTicket.id"
     :questions="catalog.currentTicket.questions"
@@ -181,4 +225,11 @@ function onResultNavigate(action: PostSessionActionId) {
     @exit="exitPlayer"
     @navigate="onResultNavigate"
   />
+  <AppSpinner v-else />
+  <ExitExamConfirmModal
+    :open="showExitExamConfirm"
+    @close="showExitExamConfirm = false"
+    @confirm="confirmExitExam"
+  />
+  </div>
 </template>

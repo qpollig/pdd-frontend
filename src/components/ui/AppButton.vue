@@ -19,8 +19,7 @@ defineEmits<{ click: [event: MouseEvent] }>();
       variant === 'secondary' &&
         'border border-border bg-surface text-text-primary hover:bg-surface-raised',
       variant === 'ghost' && 'text-text-secondary hover:bg-surface-raised hover:text-text-primary',
-      variant === 'danger' &&
-        'border border-incorrect/40 bg-incorrect/5 text-incorrect hover:bg-incorrect/10 active:bg-incorrect/15',
+      variant === 'danger' && 'bg-incorrect text-white hover:brightness-110 active:brightness-95',
     ]"
   >
     <slot />

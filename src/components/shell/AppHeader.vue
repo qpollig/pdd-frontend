@@ -47,7 +47,7 @@ function logout() {
     <div class="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:gap-6 lg:px-8 lg:py-4">
       <RouterLink to="/dashboard" class="flex items-center gap-3">
         <img :src="logo" alt="" class="h-9 w-9 rounded-xl object-contain lg:h-12 lg:w-12" />
-        <span class="text-sm font-semibold">Рим3</span>
+        <span class="text-sm font-semibold">Третий Рим</span>
       </RouterLink>
       <nav class="hidden items-center gap-1 lg:flex" aria-label="Основная навигация">
         <RouterLink
@@ -98,7 +98,7 @@ function logout() {
       <div
         v-if="isMenuOpen"
         id="mobile-nav-menu"
-        class="absolute inset-x-0 top-full z-40 flex h-screen flex-col overflow-y-auto bg-surface lg:hidden"
+        class="absolute inset-x-0 top-full z-40 flex h-screen flex-col overflow-y-auto overscroll-contain bg-surface lg:hidden"
       >
         <nav class="flex flex-1 flex-col gap-1 px-3 py-3" aria-label="Основная навигация">
           <RouterLink

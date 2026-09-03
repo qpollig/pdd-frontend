@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { computed, onMounted } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import type { TicketCategory } from '../api/types';
 import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
@@ -8,8 +8,15 @@ import { useCatalogStore } from '../stores/catalogStore';
 
 const catalog = useCatalogStore();
 const route = useRoute();
-const group = ref<'number' | 'topic'>('number');
+const router = useRouter();
 const sessionQuery = computed(() => ({ mode: (route.query.mode as string) || 'theory' }));
+
+/** Reflected in the URL so a reload or shared link keeps the chosen grouping (§ Navigation & State). */
+const group = computed<'number' | 'topic'>(() => (route.query.group === 'topic' ? 'topic' : 'number'));
+
+function setGroup(next: 'number' | 'topic') {
+  void router.replace({ query: { ...route.query, group: next } });
+}
 
 onMounted(() => {
   void catalog.loadCatalog();
@@ -35,7 +42,7 @@ function categoryLabel(category: TicketCategory): string {
         class="min-h-9 rounded-pill px-3.5 py-1.5 text-sm font-medium outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
         :class="group === 'number' ? 'bg-accent text-text-on-accent' : 'text-text-secondary hover:text-text-primary'"
         :aria-pressed="group === 'number'"
-        @click="group = 'number'"
+        @click="setGroup('number')"
       >
         По номерам
       </button>
@@ -44,7 +51,7 @@ function categoryLabel(category: TicketCategory): string {
         class="min-h-9 rounded-pill px-3.5 py-1.5 text-sm font-medium outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
         :class="group === 'topic' ? 'bg-accent text-text-on-accent' : 'text-text-secondary hover:text-text-primary'"
         :aria-pressed="group === 'topic'"
-        @click="group = 'topic'"
+        @click="setGroup('topic')"
       >
         По темам
       </button>

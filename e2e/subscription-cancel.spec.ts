@@ -140,6 +140,9 @@ test.describe('Profile: cancel auto-renew', () => {
 
       await page.getByTestId('profile-cancel-auto-renew').click();
       await expect(page.getByRole('dialog')).toBeVisible();
+      // The dialog fades/scales in over 0.2s; wait it out so layout assertions read the
+      // settled state instead of racing the entrance transition's mid-animation frame.
+      await page.waitForTimeout(300);
       await expectNoHorizontalOverflow(page);
 
       const confirmBox = await page.getByTestId('cancel-subscription-confirm').boundingBox();

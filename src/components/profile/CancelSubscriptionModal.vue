@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import AppButton from '../ui/AppButton.vue';
 
 const props = defineProps<{
@@ -9,6 +9,12 @@ const props = defineProps<{
   subscriptionEndDate?: string | null;
 }>();
 const emit = defineEmits<{ close: []; confirm: [] }>();
+
+/** `subscriptionEndDate` already ends in "г." (Russian date abbreviation), which doubles as the
+ * sentence's own period; the no-date fallback needs one added. */
+const untilText = computed(() =>
+  props.subscriptionEndDate ? `до ${props.subscriptionEndDate}` : 'до конца оплаченного периода.',
+);
 
 function close() {
   if (props.status === 'processing') return;
@@ -27,7 +33,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   <Transition name="cancel-fade">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/80 p-4 backdrop-blur-sm"
       @click.self="close"
     >
       <div
@@ -53,9 +59,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
           Отключить автопродление?
         </h2>
         <p id="cancel-subscription-description" class="mt-2 text-sm leading-relaxed text-text-secondary">
-          Premium останется активным до
-          {{ subscriptionEndDate ?? 'конца оплаченного периода' }}. После этой даты подписка не
-          продлится, и доступ станет Free.
+          Premium останется активным {{ untilText }} После этой даты подписка не продлится, и
+          доступ станет Free.
         </p>
 
         <p v-if="status === 'error'" class="mt-4 text-sm text-incorrect" role="alert">

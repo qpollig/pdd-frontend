@@ -17,6 +17,7 @@ describe('B2C routes', () => {
         'tickets',
         'ticket-session',
         'errors-session',
+        'favorites-session',
         'exam-gibdd',
         'statistics',
         'profile',
@@ -46,6 +47,15 @@ describe('B2C routes', () => {
     expect(router.currentRoute.value.name).toBe('errors-session');
     expect(router.currentRoute.value.path).toBe('/tickets/errors');
     expect(router.currentRoute.value.query.mode).toBe('errors');
+  });
+
+  it('opens Favorites on a dedicated path that still uses TicketSessionScreen', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await router.push({ name: 'favorites-session', query: { mode: 'favorites' } });
+    expect(router.currentRoute.value.name).toBe('favorites-session');
+    expect(router.currentRoute.value.path).toBe('/tickets/favorites');
+    expect(router.currentRoute.value.query.mode).toBe('favorites');
   });
 
   it('opens Exam on a dedicated path that still uses TicketSessionScreen', async () => {

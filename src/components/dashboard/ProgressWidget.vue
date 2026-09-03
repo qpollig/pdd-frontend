@@ -20,8 +20,8 @@ const percent = computed(() => {
     </p>
     <div class="mt-3 h-2 w-full overflow-hidden rounded-pill bg-surface-muted" role="presentation">
       <div
-        class="h-full rounded-pill bg-accent transition-[width] duration-500 ease-out"
-        :style="{ width: `${percent}%` }"
+        class="h-full w-full origin-left rounded-pill bg-accent transition-transform duration-500 ease-out"
+        :style="{ transform: `scaleX(${percent / 100})` }"
       />
     </div>
     <p class="mt-2 text-xs text-text-secondary">Вопросы из общего банка вопросов ПДД</p>

@@ -6,7 +6,8 @@ export type PostSessionActionId =
   | 'home'
   | 'next-error'
   | 'theory'
-  | 'repeat-exam';
+  | 'repeat-exam'
+  | 'repeat-favorites';
 
 export interface PostSessionAction {
   id: PostSessionActionId;
@@ -55,6 +56,13 @@ export function getPostSessionActions(input: {
     return {
       primary: { id: 'theory', label: 'Вернуться к теории', variant: 'primary' },
       secondary: [{ id: 'home', label: 'На главную', variant: 'ghost' }],
+    };
+  }
+
+  if (input.mode === 'favorites') {
+    return {
+      primary: { id: 'home', label: 'На главную', variant: 'primary' },
+      secondary: [{ id: 'repeat-favorites', label: 'Повторить избранное', variant: 'secondary' }],
     };
   }
 

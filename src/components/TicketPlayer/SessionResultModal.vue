@@ -38,9 +38,10 @@ const actions = computed(() =>
 </script>
 
 <template>
+  <Transition name="result-fade">
   <div
     v-if="open"
-    class="fixed inset-0 z-50 flex items-end justify-center overflow-x-hidden bg-black/40 p-4 sm:items-center"
+    class="fixed inset-0 z-50 flex items-end justify-center overflow-x-hidden overflow-y-auto overscroll-contain bg-black/40 p-4 sm:items-center"
     role="dialog"
     aria-modal="true"
     aria-labelledby="session-result-title"
@@ -98,4 +99,27 @@ const actions = computed(() =>
       </div>
     </div>
   </div>
+  </Transition>
 </template>
+
+<style scoped>
+.result-fade-enter-active,
+.result-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.result-fade-enter-from,
+.result-fade-leave-to {
+  opacity: 0;
+}
+.result-fade-enter-active > div,
+.result-fade-leave-active > div {
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
+}
+.result-fade-enter-from > div,
+.result-fade-leave-to > div {
+  transform: scale(0.96) translateY(12px);
+  opacity: 0;
+}
+</style>

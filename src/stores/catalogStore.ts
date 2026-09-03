@@ -5,7 +5,11 @@ import type { TicketCategory } from '../api/types';
 import type { Ticket, Topic } from '../domain/catalog';
 import { resolveExamTimeLimitSeconds } from '../domain/examRules';
 import type { Question } from '../domain/question';
-import { ERRORS_SESSION_TICKET_ID, EXAM_SESSION_TICKET_ID } from '../types/ticket';
+import {
+  ERRORS_SESSION_TICKET_ID,
+  EXAM_SESSION_TICKET_ID,
+  FAVORITES_SESSION_TICKET_ID,
+} from '../types/ticket';
 
 /**
  * Ticket/topic metadata (from the catalog, GET /api/v1/topics) + the domain questions for the
@@ -147,6 +151,28 @@ export const useCatalogStore = defineStore('catalog', () => {
     }
   }
 
+  /** Practice session over the current favorites list (SessionStartRequest mode=favorites). */
+  async function loadFavoritesSession() {
+    loading.value = true;
+    error.value = null;
+    currentTicket.value = null;
+    activeSessionId.value = null;
+    try {
+      const started = await apiClient.startSession({ mode: 'favorites' });
+      activeSessionId.value = started.sessionId;
+      currentTicket.value = {
+        id: FAVORITES_SESSION_TICKET_ID,
+        number: 0,
+        category: null,
+        questions: started.questions,
+      };
+    } catch {
+      error.value = 'Не удалось загрузить избранное';
+    } finally {
+      loading.value = false;
+    }
+  }
+
   function appendToCurrentTicket(questions: Question[]) {
     if (!currentTicket.value || questions.length === 0) return;
     currentTicket.value = {
@@ -178,6 +204,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     loadTopicSession,
     loadErrorQuestions,
     loadExamSession,
+    loadFavoritesSession,
     appendToCurrentTicket,
     peekErrorQuestionCount,
   };

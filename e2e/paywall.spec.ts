@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginWithYandex, openHeaderLink } from './helpers';
+import { loginWithYandex, openHeaderLink, pushNamedRoute } from './helpers';
 
 async function loginPremium(page: Page) {
   await page.goto('./auth?premium=1');
@@ -39,8 +39,10 @@ test.describe('Paywall', () => {
     await expect(page.getByText('Premium', { exact: true }).first()).toBeVisible();
     await openHeaderLink(page, 'Профиль');
     await expect(page.getByRole('heading', { name: 'Профиль' })).toBeVisible();
-    await page.getByRole('button', { name: 'Premium' }).click();
+    // Already-Premium users get no redundant "Premium" CTA on Profile (nothing left to purchase).
+    await expect(page.getByRole('button', { name: 'Premium', exact: true })).toHaveCount(0);
 
+    await pushNamedRoute(page, 'paywall');
     await expect(page.getByRole('heading', { name: 'Premium уже активен' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Подключить Premium' })).toHaveCount(0);
     await expect(page.getByTestId('paywall-purchase-cta')).toHaveCount(0);

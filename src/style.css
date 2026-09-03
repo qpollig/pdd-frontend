@@ -2,7 +2,7 @@
 
 @theme {
   --font-sans:
-    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   /* Surfaces — corporate theme: белый + чёрный + жёлтый ("Третий Рим") */
   --color-bg: #ffffff;

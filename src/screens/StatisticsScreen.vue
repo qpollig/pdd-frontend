@@ -3,7 +3,12 @@ import { computed, onMounted } from 'vue';
 import EmptyState from '../components/ui/EmptyState.vue';
 import { useCatalogStore } from '../stores/catalogStore';
 import { useTicketStore } from '../stores/ticketStore';
-import { ERRORS_SESSION_TICKET_ID, EXAM_SESSION_TICKET_ID } from '../types/ticket';
+import {
+  ERRORS_SESSION_TICKET_ID,
+  EXAM_SESSION_TICKET_ID,
+  FAVORITES_SESSION_TICKET_ID,
+} from '../types/ticket';
+import { fadeUp, staggerDelay } from '../motion/variants';
 
 const ticketStore = useTicketStore();
 const catalog = useCatalogStore();
@@ -18,6 +23,7 @@ onMounted(() => {
 function sessionLabel(id: string) {
   if (id === ERRORS_SESSION_TICKET_ID) return 'Ошибки';
   if (id === EXAM_SESSION_TICKET_ID) return 'Экзамен ГИБДД';
+  if (id === FAVORITES_SESSION_TICKET_ID) return 'Избранное';
   const ticket = catalog.tickets.find((item) => item.id === id);
   return ticket ? `Билет ${ticket.number}` : 'Билет';
 }
@@ -37,8 +43,11 @@ function accuracyPercent(id: string) {
     </p>
     <ul v-if="ticketIds.length" class="mt-6 space-y-3">
       <li
-        v-for="id in ticketIds"
+        v-for="(id, index) in ticketIds"
         :key="id"
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(index)).enter"
         class="rounded-card border border-border bg-surface p-4"
       >
         <div class="flex items-center justify-between gap-3">

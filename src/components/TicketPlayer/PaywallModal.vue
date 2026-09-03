@@ -16,7 +16,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   <Transition name="paywall-fade">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-black/80 p-4 backdrop-blur-sm"
       @click.self="$emit('close')"
     >
       <div

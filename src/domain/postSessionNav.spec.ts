@@ -54,4 +54,11 @@ describe('getPostSessionActions', () => {
       secondary: [{ id: 'repeat-exam', label: 'Повторить экзамен', variant: 'secondary' }],
     });
   });
+
+  it('keeps Favorites home as the primary and repeat as secondary', () => {
+    expect(getPostSessionActions({ mode: 'favorites' })).toEqual({
+      primary: { id: 'home', label: 'На главную', variant: 'primary' },
+      secondary: [{ id: 'repeat-favorites', label: 'Повторить избранное', variant: 'secondary' }],
+    });
+  });
 });

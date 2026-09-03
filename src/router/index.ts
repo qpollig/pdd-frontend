@@ -3,8 +3,8 @@ import { useSessionStore } from '../stores/sessionStore';
 
 /**
  * Frontend decision (ТЗ §4.8.3 ЧПУ + маршруты этапа B2C shell):
- * /dashboard, /tickets, /tickets/:ticketId, /tickets/topic/:topicId, /exam-gibdd, /statistics,
- * /profile, /paywall, /checkout, /auth
+ * /dashboard, /tickets, /tickets/:ticketId, /tickets/topic/:topicId, /tickets/errors,
+ * /tickets/favorites, /exam-gibdd, /statistics, /profile, /paywall, /checkout, /auth
  */
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -20,6 +20,12 @@ export const router = createRouter({
       name: 'errors-session',
       component: () => import('../screens/TicketSessionScreen.vue'),
       meta: { title: 'Ошибки ПДД 2026 - Проработка неверных ответов' },
+    },
+    {
+      path: '/tickets/favorites',
+      name: 'favorites-session',
+      component: () => import('../screens/TicketSessionScreen.vue'),
+      meta: { title: 'Избранное ПДД 2026 - Проработка отмеченных вопросов' },
     },
     {
       path: '/exam-gibdd',

@@ -22,7 +22,9 @@ test.describe('B2C shell navigation', () => {
 
     await openHeaderLink(page, 'Экзамен ГИБДД');
     await expect(page.getByRole('heading', { name: 'Экзамен ГИБДД' })).toBeVisible();
+    // Leaving an in-progress exam asks for confirmation first (progress would be lost).
     await page.getByRole('button', { name: 'Назад' }).click();
+    await page.getByRole('button', { name: 'Прервать экзамен' }).click();
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
 
     await openHeaderLink(page, 'Статистика');

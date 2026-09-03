@@ -84,3 +84,31 @@ describe('catalogStore loadTopicSession', () => {
     expect(catalog.currentTicket).toBeNull();
   });
 });
+
+describe('catalogStore loadFavoritesSession', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  it('starts a favorites-scoped session with an empty list by default', async () => {
+    const catalog = useCatalogStore();
+
+    await catalog.loadFavoritesSession();
+
+    expect(catalog.error).toBeNull();
+    expect(catalog.currentTicket?.questions).toEqual([]);
+    expect(catalog.activeSessionId).toEqual(expect.any(String));
+  });
+
+  it('includes a question once it has been favorited', async () => {
+    const target = (await apiClient.getTopics()).tickets[0]!;
+    const catalog = useCatalogStore();
+    await catalog.loadTicket(target.id);
+    const questionId = catalog.currentTicket!.questions[0]!.id;
+    await apiClient.addFavorite(questionId);
+
+    await catalog.loadFavoritesSession();
+
+    expect(catalog.currentTicket?.questions.map((q) => q.id)).toContain(questionId);
+  });
+});

@@ -5,6 +5,7 @@ import ErrorState from '../components/ui/ErrorState.vue';
 import logo from '../assets/logo.png';
 import type { OAuthProvider } from '../api/types';
 import { useSessionStore } from '../stores/sessionStore';
+import { fadeUp } from '../motion/variants';
 
 const router = useRouter();
 const session = useSessionStore();
@@ -32,7 +33,12 @@ async function login(provider: OAuthProvider) {
       aria-hidden="true"
     />
 
-    <div class="relative w-full max-w-[26rem]">
+    <div
+      v-motion
+      :initial="fadeUp().initial"
+      :enter="fadeUp().enter"
+      class="relative w-full max-w-[26rem]"
+    >
       <div class="relative overflow-hidden rounded-card border border-border bg-surface p-8 shadow-2xl shadow-black/[0.06] sm:p-10">
         <div class="absolute inset-x-0 top-0 h-1.5 bg-accent" aria-hidden="true" />
 
@@ -61,7 +67,7 @@ async function login(provider: OAuthProvider) {
             @click="login('yandex')"
           >
             <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FC3F1D] text-base font-bold text-white"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FC3F1D] text-base font-bold text-white"
               aria-hidden="true"
             >
               Я
@@ -76,15 +82,10 @@ async function login(provider: OAuthProvider) {
             @click="login('vk')"
           >
             <span
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0077FF]"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0077FF] text-sm font-bold text-white"
               aria-hidden="true"
             >
-              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none">
-                <path
-                  d="M4 9c.18 5.6 2.98 8.97 7.9 8.97h.28v-3.24c1.8.18 3.16 1.5 3.71 3.24H18.7c-.7-2.55-2.53-3.96-3.68-4.49 1.15-.66 2.76-2.28 3.14-4.42h-2.53c-.5 1.84-1.98 3.46-3.43 3.62V9h-2.53v6.05C7.72 15 6.3 13.14 6.24 9H4Z"
-                  fill="white"
-                />
-              </svg>
+              VK
             </span>
             <span class="flex-1 text-sm font-semibold">Войти через VK</span>
           </button>

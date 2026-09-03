@@ -21,6 +21,7 @@ defineEmits<{ toggle: [] }>();
       :fill="isFavorite ? 'currentColor' : 'none'"
       stroke="currentColor"
       stroke-width="1.8"
+      aria-hidden="true"
     >
       <path
         d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L12 3.5z"

@@ -1,10 +1,12 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
+import { MotionPlugin } from '@vueuse/motion'
+import '@fontsource-variable/inter'
 import './style.css'
 import App from './App.vue'
 import { router } from './router'
 
-createApp(App).use(createPinia()).use(router).mount('#app')
+createApp(App).use(createPinia()).use(router).use(MotionPlugin).mount('#app')
 
 /**
  * Test-only in-app navigation. Pinia session is in-memory (ТЗ §2.2), so e2e cannot

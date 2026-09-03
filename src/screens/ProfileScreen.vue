@@ -6,7 +6,8 @@ import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import CancelSubscriptionModal from '../components/profile/CancelSubscriptionModal.vue';
 import { useSessionStore } from '../stores/sessionStore';
-import { subscriptionStatusLabel } from '../domain/paywall';
+import { formatRuDate, subscriptionStatusLabel } from '../domain/paywall';
+import { fadeUp, staggerDelay } from '../motion/variants';
 
 const session = useSessionStore();
 const router = useRouter();
@@ -71,7 +72,9 @@ const subscriptionStatusText = computed(() =>
   session.subscription ? subscriptionStatusLabel(session.subscription.status) : 'Не активна',
 );
 const autoRenewText = computed(() => (session.subscription?.auto_renew ? 'Включено' : 'Выключено'));
-const paidUntilText = computed(() => session.subscription?.paid_until ?? '—');
+const paidUntilText = computed(() =>
+  session.subscription?.paid_until ? formatRuDate(session.subscription.paid_until) : '—',
+);
 
 function logout() {
   session.logout();
@@ -84,8 +87,13 @@ function logout() {
     <h1 class="text-xl font-semibold sm:text-2xl">Профиль</h1>
     <AppSpinner v-if="session.loading && !session.user" />
     <ErrorState v-else-if="session.error && !session.user" title="Ошибка" :description="session.error" />
-    <div v-else-if="session.user" class="mt-6 max-w-lg space-y-4">
-      <section class="rounded-card border border-border bg-surface p-5">
+    <div v-else-if="session.user" class="mt-6 space-y-4">
+      <section
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(0)).enter"
+        class="rounded-card border border-border bg-surface p-5"
+      >
         <div class="flex items-center gap-4">
           <span
             class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent text-lg font-semibold text-text-on-accent"
@@ -103,7 +111,12 @@ function logout() {
           </div>
         </div>
       </section>
-      <section class="rounded-card border border-border bg-surface p-5">
+      <section
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(1)).enter"
+        class="rounded-card border border-border bg-surface p-5"
+      >
         <h2 class="text-sm font-medium text-text-secondary">Подписка</h2>
         <dl class="mt-3 space-y-2 text-sm">
           <div class="flex items-center justify-between gap-4">
@@ -142,8 +155,15 @@ function logout() {
           Premium активен до {{ paidUntilText }}.
         </p>
       </section>
-      <div class="flex flex-col gap-3 sm:flex-row">
-        <AppButton class="w-full sm:w-auto" @click="router.push('/paywall')">Premium</AppButton>
+      <div
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(2)).enter"
+        class="flex flex-col gap-3 sm:flex-row"
+      >
+        <AppButton v-if="!session.isPremium" class="w-full sm:w-auto" @click="router.push('/paywall')">
+          Premium
+        </AppButton>
         <AppButton variant="secondary" class="w-full sm:w-auto" @click="logout">Выйти</AppButton>
       </div>
     </div>
@@ -151,7 +171,7 @@ function logout() {
       :open="showCancelModal"
       :status="cancelModalStatus"
       :error-message="session.cancelError"
-      :subscription-end-date="session.subscription?.paid_until"
+      :subscription-end-date="session.subscription?.paid_until ? formatRuDate(session.subscription.paid_until) : null"
       @close="closeCancelModal"
       @confirm="confirmCancelAutoRenew"
     />
