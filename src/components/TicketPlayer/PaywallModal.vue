@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted } from 'vue';
 
 const props = defineProps<{ open: boolean }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; continue: [] }>();
 
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && props.open) emit('close');
@@ -45,17 +45,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         </div>
 
         <h2 id="paywall-title" class="mt-4 text-lg font-semibold text-text-primary">
-          Откройте доступ к 3D-Видеоразбору
+          3D-видеоразбор
         </h2>
         <p id="paywall-description" class="mx-auto mt-2 max-w-[26ch] text-sm leading-relaxed text-text-secondary">
-          Разбор этого вопроса доступен после разблокировки.
+          Видео пока не воспроизводится ни на Free, ни на Premium. Появится отдельным обновлением.
         </p>
 
         <button
           type="button"
           class="mt-6 min-h-11 w-full cursor-pointer rounded-pill bg-accent px-4 py-3 text-sm font-semibold text-text-on-accent outline-none transition duration-200 ease-out hover:brightness-95 active:brightness-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          @click="$emit('continue')"
         >
-          Разблокировать доступ
+          Подробнее о Premium
         </button>
         <button
           type="button"
