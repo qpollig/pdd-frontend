@@ -1,0 +1,19 @@
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        # Пусто = запросы идут на тот же origin, что и сама страница (через Nginx-прокси
+        # ниже) — CORS не нужен. Полный http://... имеет смысл только если фронтенд и
+        # backend сознательно разносятся на разные домены/порты.
+        VITE_API_BASE_URL: ""
+        VITE_USE_MOCK_API: "false"
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - pdd-network
+
+networks:
+  pdd-network:
+    external: true

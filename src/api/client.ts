@@ -11,6 +11,8 @@ import { RealApiClient } from './RealApiClient';
  *   VITE_API_BASE_URL=http://...   — адрес backend (по умолчанию http://localhost:8000)
  */
 const useMock = import.meta.env.VITE_USE_MOCK_API !== 'false';
-const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// ?? (не ||): пустая строка — осознанное значение (same-origin запросы через Nginx-прокси
+// в проде, см. Dockerfile/nginx.conf), а не "переменная не задана". || затирал бы её дефолтом.
+const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export const apiClient: ApiClient = useMock ? new MockApiClient() : new RealApiClient(baseUrl);
