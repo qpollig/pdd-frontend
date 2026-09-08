@@ -9,5 +9,11 @@ export default defineConfig(({ command }) => ({
   test: {
     environment: 'happy-dom',
     include: ['src/**/*.spec.ts'],
+    // Unit/e2e-фикстуры рассчитаны на MockApiClient. Переключение боевого рантайма на
+    // RealApiClient идёт через .env.local (VITE_USE_MOCK_API=false) и не должно протекать
+    // в тесты: здесь принудительно возвращаем моки независимо от .env.local.
+    env: {
+      VITE_USE_MOCK_API: 'true',
+    },
   },
 }))
