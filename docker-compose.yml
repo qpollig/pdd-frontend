@@ -2,12 +2,20 @@ services:
   frontend:
     build:
       context: .
+      # Интерполяция из .env рядом с этим файлом (Docker Compose читает его сам). Литеральные
+      # строки в args ПОЛНОСТЬЮ игнорировали .env — сервер не мог влиять на сборку.
+      # ":-" — значение по умолчанию, если переменная не задана в .env.
       args:
+        # SPA раздаётся с корня; /pdd-frontend/ — только для GitHub Pages (см. Dockerfile).
+        VITE_BASE_PATH: "${VITE_BASE_PATH:-/}"
         # Пусто = запросы идут на тот же origin, что и сама страница (через Nginx-прокси
         # ниже) — CORS не нужен. Полный http://... имеет смысл только если фронтенд и
         # backend сознательно разносятся на разные домены/порты.
-        VITE_API_BASE_URL: ""
-        VITE_USE_MOCK_API: "false"
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
+        VITE_USE_MOCK_API: "${VITE_USE_MOCK_API:-false}"
+        VITE_MOCK_LOGIN: "${VITE_MOCK_LOGIN:-false}"
+        VITE_YANDEX_OAUTH_CLIENT_ID: "${VITE_YANDEX_OAUTH_CLIENT_ID:-}"
+        VITE_VK_OAUTH_CLIENT_ID: "${VITE_VK_OAUTH_CLIENT_ID:-}"
     restart: unless-stopped
     ports:
       - "80:80"

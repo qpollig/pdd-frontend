@@ -23,3 +23,11 @@ export const apiClient: ApiClient = useMock ? new MockApiClient() : new RealApiC
  * которое об этом переключении знает, тем же способом, что и apiClient выше.
  */
 export const isMockApi = useMock;
+
+/**
+ * Способ входа отвязан от источника данных: `VITE_MOCK_LOGIN=true` форсирует mock-вход
+ * (фиксированный код на backend с OAUTH_ALLOW_MOCK=true) даже при `VITE_USE_MOCK_API=false` —
+ * это позволяет тянуть РЕАЛЬНЫЕ билеты/темы с backend, пока нет зарегистрированных
+ * Yandex/VK OAuth-приложений. Если флаг не задан — поведение как раньше, следует за useMock.
+ */
+export const useMockLogin = import.meta.env.VITE_MOCK_LOGIN === 'true' || useMock;

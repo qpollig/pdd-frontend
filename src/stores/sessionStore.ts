@@ -7,7 +7,7 @@ import type {
   FinishSessionInput,
   FinishSessionResult,
 } from '../api/ApiClient';
-import { apiClient, isMockApi } from '../api/client';
+import { apiClient, useMockLogin } from '../api/client';
 import type { CheckoutStatus } from '../domain/checkout';
 import type {
   AuthSession,
@@ -136,7 +136,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function loginWithProvider(provider: OAuthProvider) {
-    if (isMockApi) {
+    if (useMockLogin) {
       await loginWithMockCode(provider);
       return;
     }

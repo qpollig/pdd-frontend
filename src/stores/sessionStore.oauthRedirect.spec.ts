@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * which only activates when VITE_USE_MOCK_API=false — the opposite of vite.config.ts's forced test
  * default. `vi.resetModules()` + a fresh dynamic import (of pinia too, so every module involved
  * shares the same reset registry) is what lets each test re-evaluate api/client.ts's module-level
- * `isMockApi` against a freshly stubbed env, matching what actually happens at app boot.
+ * `useMockLogin` against a freshly stubbed env, matching what actually happens at app boot.
  */
 describe('sessionStore real OAuth redirect flow (RealApiClient)', () => {
   const originalLocation = window.location;

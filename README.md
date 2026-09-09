@@ -44,18 +44,30 @@ VITE_API_BASE_URL=http://localhost:8000
 
 ### OAuth (Yandex/VK)
 
-При `VITE_USE_MOCK_API=false` вход выполняется через Yandex/VK OAuth (классический
-authorization code flow; VK ID пока не поддерживается).
+Способ входа отвязан от источника данных — ими управляют два независимых флага:
 
-Для работы необходимо зарегистрировать OAuth-приложение у провайдера и указать:
+| | `VITE_USE_MOCK_API` | `VITE_MOCK_LOGIN` | Данные | Вход |
+|---|---|---|---|---|
+| Локальная разработка / e2e | `true` (по умолчанию) | не задан | фикстуры | mock-код |
+| **Реальные данные, ещё нет OAuth-приложений** | `false` | **`true`** | backend | mock-код |
+| Прод | `false` | не задан / `false` | backend | Yandex/VK OAuth-редирект |
+
+`VITE_MOCK_LOGIN=true` держит `VITE_USE_MOCK_API=false` (реальные билеты/темы/сессии с backend)
+и одновременно позволяет логиниться без зарегистрированных Yandex/VK-приложений — фиксированным
+mock-кодом. **Работает только пока backend поднят с `OAUTH_ALLOW_MOCK=true`** (иначе backend
+отвергнет mock-код). Если `VITE_MOCK_LOGIN` не задан — поведение как раньше: следует за
+`VITE_USE_MOCK_API`.
+
+Настоящий OAuth-редирект (`VITE_USE_MOCK_API=false`, `VITE_MOCK_LOGIN` не `true`) — классический
+authorization code flow (VK ID пока не поддерживается); нужно зарегистрировать OAuth-приложение
+у провайдера и указать публичные `client_id`:
 
 ```env
 VITE_YANDEX_OAUTH_CLIENT_ID=...
 VITE_VK_OAUTH_CLIENT_ID=...
 ```
 
-### Mock OAuth (dev/e2e)
-
-При `VITE_USE_MOCK_API=true` (по умолчанию) вход не требует реальных OAuth-приложений —
-используется фиксированный код, без сети и редиректа. На этом рассчитаны текущие unit/e2e-тесты.
+Под Docker все три (`VITE_USE_MOCK_API`, `VITE_MOCK_LOGIN`, `VITE_*_OAUTH_CLIENT_ID`) передаются
+в сборку через `build.args` в `docker-compose.yml`, которые интерполируются из `.env` рядом с
+compose-файлом (Vite «запекает» их в бандл на этапе `npm run build`).
 
