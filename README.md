@@ -1,9 +1,11 @@
 # pdd-frontend
 
-B2C frontend подготовки к экзамену ПДД (Vue 3 + Vite + Tailwind + Pinia).
+B2C frontend подготовки к экзамену ПДД (Vue 3 + Vite + Tailwind + Pinia): каталог билетов,
+режимы Theory/Errors/Exam, работа над ошибками, лимит «жизней» с восстановлением, Premium
+paywall и checkout, профиль пользователя.
 
 Продуктовые требования: `docs/tz_v1_5_study_pdd.docx`.
-Состояние этапа 1 (shell): `docs/B2C_IMPLEMENTATION.md`.
+Подробности реализации по фичам (историческая фиксация по мере разработки): `docs/B2C_IMPLEMENTATION.md`.
 
 ## Команды
 
@@ -40,21 +42,14 @@ VITE_API_BASE_URL=http://localhost:8000
 `CORS_ALLOW_ORIGINS`, включающий адрес, на котором открыт фронтенд (по умолчанию Vite —
 `http://localhost:5173`).
 
-**Известные ограничения текущей реализации `RealApiClient` (`src/api/RealApiClient.ts`):**
+**Известное ограничение текущей реализации `RealApiClient` (`src/api/RealApiClient.ts`):**
 
-1. **Картинки вопросов не загрузятся.** `GET /api/v1/questions/{id}/image` на backend защищён
-   Bearer-авторизацией, а обычный `<img src="...">` не может передать заголовок Authorization.
-   Нужно либо снять авторизацию с этого эндпоинта на backend (картинка не эксклюзивна сама по
-   себе — доступ к вопросу уже проверен на уровне сессии), либо переписать `MediaBlock.vue` на
-   авторизованный `fetch()` + `URL.createObjectURL(blob)`.
-2. **Checkout не активирует Premium синхронно.** Реальный `POST /billing/checkout/init` только
-   инициирует платёж и возвращает `confirmation_url` для редиректа на эквайринг; активация
-   происходит позже через вебхук. `RealApiClient.checkout()` реально уводит браузер на оплату,
-   но не может вернуть `{status: 'success', ...}`, как ожидает текущий интерфейс `ApiClient` —
-   `CheckoutScreen.vue`/checkout-стор нужно дорабатывать отдельной задачей под redirect-флоу
-   (страница возврата + опрос `GET /subscriptions/me` после оплаты).
-3. **Вход по-прежнему через фиксированные mock-коды** (`mock-{provider}-code...` в
-   `sessionStore.loginWithProvider`) — это штатно работает с backend при
-   `OAUTH_ALLOW_MOCK=true` (см. `.env.example` backend), но не является настоящим
-   Yandex/VK OAuth-редиректом. Реальный OAuth-флоу — отдельная задача.
+- **Вход — через mock-код, а не настоящий OAuth-редирект.** `sessionStore.loginWithProvider`
+  всегда отправляет на backend фиксированный код вида `mock-{provider}-code...`
+  (`POST /api/v1/auth/oauth/{provider}`), а не код, полученный со страницы логина Yandex/VK.
+  Это штатный dev/e2e-режим backend при `OAUTH_ALLOW_MOCK=true` (см. `.env.example` backend) —
+  сам обмен кода на сессию на backend реализован и работает, просто frontend не делает
+  полноценный OAuth-редирект (переход на страницу логина провайдера, получение настоящего
+  authorization code, обратный редирект). Полноценный OAuth redirect-флоу во frontend —
+  отдельная задача.
 
