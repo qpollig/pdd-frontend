@@ -140,12 +140,14 @@ export class RealApiClient implements ApiClient {
     return list.map((dto) => mapQuestion(this.absolutizeQuestion(dto)));
   }
 
-  async exchangeOAuthCode(provider: OAuthProvider, code: string): Promise<AuthSession> {
-    // redirect_uri не передаём — backend подставляет settings.OAUTH_REDIRECT_URI сам
-    // (см. app/api/v1/endpoints/auth.py); для dev-режима с OAUTH_ALLOW_MOCK=true это не важно.
+  async exchangeOAuthCode(provider: OAuthProvider, code: string, redirectUri?: string): Promise<AuthSession> {
+    // redirect_uri передаём явно, когда он известен (реальный redirect-флоу — см.
+    // src/auth/oauthRedirect.ts): он должен совпадать с тем, что использовался при построении
+    // authorize-URL провайдера. Если не передан (mock-режим), backend подставляет
+    // settings.OAUTH_REDIRECT_URI сам (см. app/api/v1/endpoints/auth.py).
     const session = await this.request<AuthSession>(`/api/v1/auth/oauth/${provider}`, {
       method: 'POST',
-      body: { code },
+      body: redirectUri ? { code, redirect_uri: redirectUri } : { code },
       auth: false,
     });
     this.accessToken = session.access_token;

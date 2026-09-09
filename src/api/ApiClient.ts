@@ -89,10 +89,13 @@ export interface FinishSessionResult {
  */
 export interface ApiClient {
   /**
-   * Обмен OAuth code на сессию (ТЗ §4.1).
-   * Frontend не реализует протокол Yandex/VK — только вызов этого метода.
+   * Обмен OAuth code на сессию (ТЗ §4.1) — POST /api/v1/auth/oauth/{provider},
+   * OAuthLoginRequest { code, redirect_uri? } → TokenResponse (openapi.json, подтверждено на живом
+   * backend). `redirectUri`, если передан, должен буквально совпадать с тем redirect_uri, что был
+   * использован при построении authorize-URL провайдера (см. src/auth/oauthRedirect.ts) — иначе
+   * провайдер отклонит обмен кода на своей стороне при OAUTH_EXCHANGE_FAILED.
    */
-  exchangeOAuthCode(provider: OAuthProvider, code: string): Promise<AuthSession>;
+  exchangeOAuthCode(provider: OAuthProvider, code: string, redirectUri?: string): Promise<AuthSession>;
   /**
    * openapi.json GET /api/v1/users/me — UserOut. Same domain shape TokenResponse.user maps to
    * (see sessionStore's userFromAuthSession); this is the only user-state source, there is no

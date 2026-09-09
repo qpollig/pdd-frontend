@@ -16,6 +16,12 @@ export const router = createRouter({
       meta: { title: 'Вход' },
     },
     {
+      path: '/auth/callback/:provider',
+      name: 'oauth-callback',
+      component: () => import('../screens/OAuthCallbackScreen.vue'),
+      meta: { title: 'Вход' },
+    },
+    {
       path: '/tickets/errors',
       name: 'errors-session',
       component: () => import('../screens/TicketSessionScreen.vue'),
@@ -103,7 +109,7 @@ router.beforeEach(async (to) => {
   // any auth decision below — a no-op for every ordinary navigation, since it only does work when
   // there is no live session yet AND a bridge entry is actually present.
   await session.hydrateFromCheckoutBridge();
-  if (to.name === 'auth') {
+  if (to.name === 'auth' || to.name === 'oauth-callback') {
     if (session.isAuthenticated) {
       return { name: 'dashboard' };
     }

@@ -7,7 +7,7 @@ import type {
   FinishSessionInput,
   FinishSessionResult,
 } from '../api/ApiClient';
-import { apiClient } from '../api/client';
+import { apiClient, isMockApi } from '../api/client';
 import type { CheckoutStatus } from '../domain/checkout';
 import type {
   AuthSession,
@@ -17,6 +17,12 @@ import type {
   PremiumOffer,
   Subscription,
 } from '../api/types';
+import {
+  buildAuthorizeUrl,
+  buildOAuthCallbackUrl,
+  generateOAuthState,
+  isOAuthProviderConfigured,
+} from '../auth/oauthRedirect';
 
 export type CancelAutoRenewStatus = 'idle' | 'processing' | 'success' | 'error';
 
@@ -28,6 +34,18 @@ export type CancelAutoRenewStatus = 'idle' | 'processing' | 'success' | 'error';
  * never becomes a standing auth source: normal login/logout/navigation never touch it.
  */
 const CHECKOUT_AUTH_BRIDGE_KEY = 'av_checkout_auth_bridge';
+
+/**
+ * One-shot bridge for the real OAuth redirect (see beginOAuthRedirect/completeOAuthCallback below):
+ * the browser fully navigates away to the provider's own authorize page and back, which wipes
+ * in-memory Pinia state just like the checkout redirect does — same reasoning as
+ * CHECKOUT_AUTH_BRIDGE_KEY, same storage choice (sessionStorage: tab-scoped, read-once). Carries
+ * only the CSRF `state` and the provider it was issued for; written right before the redirect,
+ * consumed and deleted on the very next callback regardless of outcome.
+ */
+const OAUTH_STATE_BRIDGE_KEY = 'av_oauth_state_bridge';
+
+type OAuthStateBridge = { provider: OAuthProvider; state: string };
 
 /** TokenResponse.user is the same UserOut as /users/me (incl. lives_regen_at/lives_reset_at) — CurrentUser is AuthUser. */
 function userFromAuthSession(session: AuthSession): CurrentUser {
@@ -58,7 +76,8 @@ export const useSessionStore = defineStore('session', () => {
     user.value = userFromAuthSession(session);
   }
 
-  async function loginWithProvider(provider: OAuthProvider) {
+  /** dev/e2e-логин против MockApiClient — фиксированный код, без сети и без редиректа. */
+  async function loginWithMockCode(provider: OAuthProvider) {
     loading.value = true;
     error.value = null;
     try {
@@ -81,6 +100,95 @@ export const useSessionStore = defineStore('session', () => {
       user.value = null;
       error.value = 'Не удалось войти';
       throw cause;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * Настоящий OAuth-редирект (RealApiClient): сохраняет CSRF `state` в одноразовый бридж и уводит
+   * браузер на страницу авторизации провайдера. Ничего не возвращает — либо страница уходит по
+   * window.location.href, либо, если провайдер не сконфигурирован (нет client_id), в error
+   * записывается понятная причина без редиректа.
+   */
+  function beginOAuthRedirect(provider: OAuthProvider) {
+    if (typeof window === 'undefined') return;
+    if (!isOAuthProviderConfigured(provider)) {
+      error.value = 'OAuth-провайдер не настроен';
+      return;
+    }
+
+    loading.value = true;
+    error.value = null;
+
+    const state = generateOAuthState();
+    try {
+      const bridge: OAuthStateBridge = { provider, state };
+      window.sessionStorage.setItem(OAUTH_STATE_BRIDGE_KEY, JSON.stringify(bridge));
+    } catch {
+      // sessionStorage недоступен — редирект всё равно происходит, но раз бриджа не будет,
+      // проверка state на возврате не пройдёт и completeOAuthCallback честно сообщит об ошибке,
+      // а не подделает успешный вход.
+    }
+
+    const redirectUri = buildOAuthCallbackUrl(provider);
+    window.location.href = buildAuthorizeUrl(provider, { redirectUri, state });
+  }
+
+  async function loginWithProvider(provider: OAuthProvider) {
+    if (isMockApi) {
+      await loginWithMockCode(provider);
+      return;
+    }
+    beginOAuthRedirect(provider);
+  }
+
+  /**
+   * Завершение настоящего OAuth-редиректа: вызывается из OAuthCallbackScreen после возврата от
+   * провайдера. Один путь на все исходы (ошибка от провайдера, отсутствие code, невалидный/
+   * отсутствующий state, отказ backend при обмене) — CSRF state и одноразовый бридж проверяются и
+   * удаляются в любом случае, до фактического обращения к backend.
+   */
+  async function completeOAuthCallback(
+    provider: OAuthProvider,
+    params: { code: string | null; state: string | null; providerError: string | null },
+  ): Promise<boolean> {
+    loading.value = true;
+    error.value = null;
+
+    let bridge: OAuthStateBridge | null;
+    try {
+      const raw = window.sessionStorage.getItem(OAUTH_STATE_BRIDGE_KEY);
+      bridge = raw ? (JSON.parse(raw) as OAuthStateBridge) : null;
+    } catch {
+      bridge = null;
+    }
+    try {
+      window.sessionStorage.removeItem(OAUTH_STATE_BRIDGE_KEY);
+    } catch {
+      /* ignore — nothing left to clean up if storage is unavailable */
+    }
+
+    const stateValid = Boolean(bridge && bridge.provider === provider && bridge.state === params.state);
+
+    if (params.providerError || !params.code || !stateValid) {
+      accessToken.value = null;
+      user.value = null;
+      error.value = 'Не удалось войти';
+      loading.value = false;
+      return false;
+    }
+
+    try {
+      const redirectUri = buildOAuthCallbackUrl(provider);
+      const session = await apiClient.exchangeOAuthCode(provider, params.code, redirectUri);
+      applySession(session);
+      return true;
+    } catch {
+      accessToken.value = null;
+      user.value = null;
+      error.value = 'Не удалось войти';
+      return false;
     } finally {
       loading.value = false;
     }
@@ -309,6 +417,7 @@ export const useSessionStore = defineStore('session', () => {
     isAuthenticated,
     isPremium,
     loginWithProvider,
+    completeOAuthCallback,
     logout,
     loadCurrentUser,
     loadProfile,

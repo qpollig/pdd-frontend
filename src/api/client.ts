@@ -16,3 +16,10 @@ const useMock = import.meta.env.VITE_USE_MOCK_API !== 'false';
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export const apiClient: ApiClient = useMock ? new MockApiClient() : new RealApiClient(baseUrl);
+
+/**
+ * Разводит sessionStore.loginWithProvider() между фиксированным mock-кодом (dev/e2e, см.
+ * MockApiClient) и настоящим OAuth-редиректом на провайдера (RealApiClient) — единственное место,
+ * которое об этом переключении знает, тем же способом, что и apiClient выше.
+ */
+export const isMockApi = useMock;

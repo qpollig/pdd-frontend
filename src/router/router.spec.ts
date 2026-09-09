@@ -94,6 +94,23 @@ describe('B2C routes', () => {
     expect(router.currentRoute.value.name).toBe('auth');
   });
 
+  it('registers the oauth-callback route', () => {
+    const names = router.getRoutes().map((route) => route.name);
+    expect(names).toContain('oauth-callback');
+  });
+
+  it('allows anonymous access to the oauth-callback route', async () => {
+    await router.push({ name: 'oauth-callback', params: { provider: 'yandex' } });
+    expect(router.currentRoute.value.name).toBe('oauth-callback');
+  });
+
+  it('sends an already-authenticated user from oauth-callback straight to dashboard', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await router.push({ name: 'oauth-callback', params: { provider: 'vk' } });
+    expect(router.currentRoute.value.name).toBe('dashboard');
+  });
+
   it('restores a session from the checkout auth bridge before deciding, and does not bounce to auth', async () => {
     // Simulates the D1 checkout-redirect reload: nothing live in this fresh Pinia instance, but a
     // bridge entry from just before the redirect is sitting in sessionStorage.
