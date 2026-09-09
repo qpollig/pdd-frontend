@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * The default dev server here runs MockApiClient (VITE_USE_MOCK_API unset ⇒ true), so these
- * exercise the real /auth/callback/:provider route, guard and state-bridge contract end to end
- * without ever reaching an external OAuth provider — the same contract the real Yandex/VK redirect
- * lands on, just with MockApiClient standing in for the backend's code exchange.
+ * With no VITE_USE_MOCK_API set, the dev server defaults to MockApiClient, so this suite drives
+ * the actual /auth/callback/:provider route — guard behavior and the state bridge included — start
+ * to finish, never touching a real OAuth provider. It's the identical contract the genuine
+ * Yandex/VK redirect relies on; MockApiClient just stands in for the backend's code-for-token step.
  */
 test.describe('OAuth callback contract (no external provider)', () => {
   test('completes login when the returned state matches the one-shot bridge', async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe('OAuth callback contract (no external provider)', () => {
     await page.goto('./auth/callback/yandex?code=mock-yandex-code&state=once-only');
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
 
-    // Simulates a browser-history reload of the callback URL after the bridge was already consumed.
+    // Mirrors a user hitting back/refresh on the callback URL once the bridge entry is gone.
     await page.goto('./auth/callback/yandex?code=mock-yandex-code&state=once-only');
 
     await expect(page.getByRole('heading', { name: 'Вход' })).toBeVisible();
