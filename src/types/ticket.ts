@@ -39,6 +39,15 @@ export type AnswerStatus = 'unanswered' | 'answered' | 'correct' | 'incorrect';
 
 export type ExamStatus = 'in_progress' | 'finished' | 'timed_out';
 
+/**
+ * Why SessionResultModal is open with `sessionFinishedForced` rather than a normal finish —
+ * presentation-only, never sent by the backend (SessionAnswerResponse only has the boolean flag).
+ * `extra_question_mistake`: an exam extra/bonus question was answered incorrectly (ТЗ §3.2 — no
+ * second chances on extras) — the one case with a dedicated message, distinct from a normal
+ * failed/timed-out exam.
+ */
+export type ForcedFinishReason = 'extra_question_mistake' | null;
+
 export interface QuestionState {
   status: AnswerStatus;
   selectedAnswerId: string | null;

@@ -3,16 +3,15 @@ import { computed, ref } from 'vue';
 import type {
   AnswerSessionInput,
   AnswerSessionResult,
+  CheckoutInitResult,
   FinishSessionInput,
   FinishSessionResult,
 } from '../api/ApiClient';
 import { apiClient } from '../api/client';
 import type { CheckoutStatus } from '../domain/checkout';
-import { MOCK_PAYMENT_PROVIDER_PLACEHOLDER } from '../domain/checkout';
 import type {
   AuthSession,
   CancelSubscriptionResponse,
-  CheckoutResult,
   CurrentUser,
   OAuthProvider,
   PremiumOffer,
@@ -21,12 +20,18 @@ import type {
 
 export type CancelAutoRenewStatus = 'idle' | 'processing' | 'success' | 'error';
 
-/** UserOut (TokenResponse.user) уже содержит lives_*; здесь добавляется только frontend-only `lives_regen_at`. */
+/**
+ * D1 one-shot checkout auth bridge (see report): the real payment redirect is a full-page
+ * navigation to an external origin and back, which wipes the in-memory-only accessToken (ТЗ
+ * §2.2). This sessionStorage entry exists ONLY to survive that single round trip — written right
+ * before the redirect, consumed and deleted on the very next app boot regardless of outcome. It
+ * never becomes a standing auth source: normal login/logout/navigation never touch it.
+ */
+const CHECKOUT_AUTH_BRIDGE_KEY = 'av_checkout_auth_bridge';
+
+/** TokenResponse.user is the same UserOut as /users/me (incl. lives_regen_at/lives_reset_at) — CurrentUser is AuthUser. */
 function userFromAuthSession(session: AuthSession): CurrentUser {
-  return {
-    ...session.user,
-    lives_regen_at: null,
-  };
+  return session.user;
 }
 
 export const useSessionStore = defineStore('session', () => {
@@ -163,15 +168,57 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  function applyCheckoutResult(result: CheckoutResult) {
-    subscription.value = result.subscription;
-    if (user.value) {
-      user.value = { ...user.value, is_premium: true };
+  /**
+   * Stashes the current in-memory token into the one-shot checkout bridge, right before the real
+   * browser redirect. sessionStorage was chosen deliberately over localStorage (see report):
+   * tab-scoped, gone on tab close, and read-once — never a second persistent auth source.
+   */
+  function stashCheckoutAuthBridge() {
+    if (typeof window === 'undefined' || !accessToken.value) return;
+    try {
+      window.sessionStorage.setItem(CHECKOUT_AUTH_BRIDGE_KEY, accessToken.value);
+    } catch {
+      // sessionStorage unavailable (private mode, storage disabled) — redirect still proceeds,
+      // just without auth continuity; the user will land on /auth and can log in again.
     }
   }
 
-  async function submitCheckout(): Promise<CheckoutResult | null> {
-    if (checkoutStatus.value === 'processing' || checkoutStatus.value === 'success') {
+  /**
+   * Boot-time rehydration for the checkout bridge — see router/index.ts, which awaits this before
+   * making any auth decision. No-ops instantly for every ordinary navigation (the common case):
+   * only does anything when there is no live session yet AND a bridge entry exists. On both the
+   * success and invalid-token paths the bridge entry is deleted, so it is never read twice.
+   */
+  async function hydrateFromCheckoutBridge(): Promise<void> {
+    if (accessToken.value || user.value) return;
+    if (typeof window === 'undefined') return;
+
+    let token: string | null;
+    try {
+      token = window.sessionStorage.getItem(CHECKOUT_AUTH_BRIDGE_KEY);
+    } catch {
+      return;
+    }
+    if (!token) return;
+
+    accessToken.value = token;
+    apiClient.restoreAccessToken(token);
+    await loadCurrentUser();
+
+    if (!user.value) {
+      // Invalid/stale token — do not fake an authenticated state.
+      accessToken.value = null;
+    }
+
+    try {
+      window.sessionStorage.removeItem(CHECKOUT_AUTH_BRIDGE_KEY);
+    } catch {
+      /* ignore — nothing left to clean up if storage is unavailable */
+    }
+  }
+
+  async function submitCheckout(): Promise<CheckoutInitResult | null> {
+    if (checkoutStatus.value === 'processing' || checkoutStatus.value === 'redirecting') {
       return null;
     }
     if (isPremium.value) {
@@ -184,13 +231,12 @@ export const useSessionStore = defineStore('session', () => {
     checkoutError.value = null;
 
     try {
-      const result = await apiClient.checkout({
-        plan: premiumOffer.value?.plan ?? 'trial_1rub_299',
-        payment_method_token: MOCK_PAYMENT_PROVIDER_PLACEHOLDER,
-        promo_code: null,
-      });
-      applyCheckoutResult(result);
-      checkoutStatus.value = 'success';
+      const result = await apiClient.checkout();
+      checkoutStatus.value = 'redirecting';
+      stashCheckoutAuthBridge();
+      if (typeof window !== 'undefined') {
+        window.location.href = result.confirmationUrl;
+      }
       return result;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : '';
@@ -200,7 +246,7 @@ export const useSessionStore = defineStore('session', () => {
         return null;
       }
       checkoutStatus.value = 'error';
-      checkoutError.value = 'Не удалось провести оплату. Попробуйте ещё раз.';
+      checkoutError.value = 'Не удалось начать оплату. Попробуйте ещё раз.';
       return null;
     }
   }
@@ -269,6 +315,7 @@ export const useSessionStore = defineStore('session', () => {
     loadPaywall,
     loadCheckout,
     loadSubscription,
+    hydrateFromCheckoutBridge,
     submitCheckout,
     cancelAutoRenew,
     answerSession,

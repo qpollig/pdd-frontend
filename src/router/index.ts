@@ -97,8 +97,12 @@ export const router = createRouter({
   },
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const session = useSessionStore();
+  // D1: restores accessToken from the one-shot checkout-redirect bridge (see sessionStore) before
+  // any auth decision below — a no-op for every ordinary navigation, since it only does work when
+  // there is no live session yet AND a bridge entry is actually present.
+  await session.hydrateFromCheckoutBridge();
   if (to.name === 'auth') {
     if (session.isAuthenticated) {
       return { name: 'dashboard' };

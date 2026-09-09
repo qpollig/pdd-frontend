@@ -7,17 +7,45 @@ import AppButton from '../components/ui/AppButton.vue';
 import EmptyState from '../components/ui/EmptyState.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
+import { formatLivesCountdown, livesRegenRemainingMs } from '../domain/livesRegen';
 import { nextTheoryTicketId, type PostSessionActionId } from '../domain/postSessionNav';
 import { useCatalogStore } from '../stores/catalogStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { useTicketStore } from '../stores/ticketStore';
 import { EXAM_SESSION_TICKET_ID, type TicketMode } from '../types/ticket';
 
 const route = useRoute();
 const router = useRouter();
 const catalog = useCatalogStore();
+const session = useSessionStore();
 const ticketStore = useTicketStore();
 const sessionGeneration = ref(0);
 const showExitExamConfirm = ref(false);
+
+/**
+ * 403 OUT_OF_LIVES arrives before session.user necessarily has a fresh lives_regen_at (ТЗ Блок
+ * C4/C5) — re-pull /users/me through the existing sessionStore mechanism, not a second store.
+ */
+watch(
+  () => catalog.outOfLives,
+  (isOutOfLives) => {
+    if (isOutOfLives) {
+      void session.loadCurrentUser();
+    }
+  },
+);
+
+const outOfLivesMessage = computed(() => {
+  const user = session.user;
+  if (!user || user.is_premium || !user.lives_regen_at) {
+    return 'Дождитесь восстановления жизней или оформите Premium.';
+  }
+  const remaining = livesRegenRemainingMs(user, Date.now());
+  if (remaining == null || remaining <= 0) {
+    return 'Жизни вот-вот восстановятся — обновите страницу.';
+  }
+  return `Следующая жизнь будет доступна через ${formatLivesCountdown(remaining)}.`;
+});
 
 function resolveMode(): TicketMode {
   if (route.name === 'exam-gibdd') return 'exam';
@@ -161,6 +189,13 @@ function onResultNavigate(action: PostSessionActionId) {
 <template>
   <div>
   <AppSpinner v-if="catalog.loading" />
+  <div v-else-if="catalog.outOfLives" class="min-h-screen bg-bg px-4 py-8 text-text-primary sm:px-6">
+    <div class="mx-auto w-full max-w-md">
+      <EmptyState title="Жизни закончились" :description="outOfLivesMessage">
+        <AppButton class="w-full sm:w-auto" @click="goHome">На главную</AppButton>
+      </EmptyState>
+    </div>
+  </div>
   <div v-else-if="catalog.error" class="min-h-screen bg-bg p-4">
     <ErrorState
       :title="mode === 'exam' ? 'Не удалось начать экзамен' : 'Не удалось открыть билет'"

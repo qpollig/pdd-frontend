@@ -8,12 +8,15 @@ import { mapCatalog } from '../domain/catalogMapper';
 import type { CatalogSnapshot } from '../domain/catalog';
 import type { Question } from '../domain/question';
 import { mapQuestion } from '../domain/questionMapper';
+import { mapProgress } from '../domain/progressMapper';
+import type { ProgressSnapshot } from '../domain/progress';
 import sourceTicket from '../data/ticket-1.json';
 import type { FixtureQuestion } from '../types/ticket';
 import type {
   AnswerSessionInput,
   AnswerSessionResult,
   ApiClient,
+  CheckoutInitResult,
   FavoriteToggleResult,
   FinishSessionInput,
   FinishSessionResult,
@@ -26,9 +29,8 @@ import { MOCK_PREMIUM_OFFER } from './premiumOfferFixture';
 import type {
   AuthSession,
   AuthUser,
+  BankProgressOut,
   CancelSubscriptionResponse,
-  CheckoutRequest,
-  CheckoutResult,
   CurrentUser,
   OAuthProvider,
   PremiumOffer,
@@ -38,7 +40,10 @@ import type {
   SubscriptionStatus,
   TicketCategory,
   TicketOut,
+  TicketProgressOut,
+  TicketProgressStatus,
   TopicOut,
+  TopicProgressOut,
 } from './types';
 
 const QUESTIONS = sourceTicket as FixtureQuestion[];
@@ -74,6 +79,7 @@ function buildTopics(): TopicOut[] {
     id: topicUuid(index),
     title,
     order_index: index,
+    questions_count: QUESTIONS.filter((question) => question.topic.includes(title)).length,
   }));
 }
 
@@ -93,6 +99,7 @@ const MOCK_USER: CurrentUser = {
   errors_count: 0,
   favorites_count: 0,
   lives_regen_at: null,
+  lives_reset_at: null,
 };
 
 const MOCK_AUTH_USERS: Record<OAuthProvider, AuthUser> = {
@@ -107,6 +114,8 @@ const MOCK_AUTH_USERS: Record<OAuthProvider, AuthUser> = {
     lives_max: MOCK_LIVES_MAX,
     errors_count: 0,
     favorites_count: 0,
+    lives_regen_at: null,
+    lives_reset_at: null,
   },
   vk: {
     id: '00000000-0000-4000-8000-000000000102',
@@ -119,6 +128,8 @@ const MOCK_AUTH_USERS: Record<OAuthProvider, AuthUser> = {
     lives_max: MOCK_LIVES_MAX,
     errors_count: 0,
     favorites_count: 0,
+    lives_regen_at: null,
+    lives_reset_at: null,
   },
 };
 
@@ -139,10 +150,21 @@ export type MockApiClientFixtures = {
 
 type SessionRecord = {
   mode: SessionMode;
+  /** Only set for mode 'theory' sessions started with a ticketId — drives ticketProgress on finish. */
+  ticketId: string | null;
   /** Grows in place (exam extras) — order_index of each QuestionOut mirrors its position here. */
   questions: FixtureQuestion[];
   answers: Map<string, { answerId: string; isCorrect: boolean }>;
   finished: boolean;
+};
+
+/** In-memory GET /api/v1/progress bookkeeping for a single ticket — see MockApiClient.getProgress(). */
+type TicketProgressRecord = {
+  attempts: number;
+  bestCorrect: number;
+  totalQuestions: number;
+  lastAttemptAt: string | null;
+  inProgress: boolean;
 };
 
 function cloneQuestion(question: FixtureQuestion): FixtureQuestion {
@@ -169,6 +191,9 @@ function answerId(questionId: string, orderIndex: number): string {
   return `${questionId}${ANSWER_ID_INFIX}${orderIndex}`;
 }
 
+/** Fixture-data sentinel for "this question has no photo" (see types/ticket.ts FixtureQuestion.image) — not a real URL. */
+const NO_IMAGE_SENTINEL = './images/no_image.jpg';
+
 /** Inverse of answerId(); returns -1 for an answer id that doesn't belong to this question. */
 function answerIndexFromId(questionId: string, candidateAnswerId: string): number {
   const prefix = `${questionId}${ANSWER_ID_INFIX}`;
@@ -193,7 +218,7 @@ function toQuestionOut(
     id: question.id,
     order_index: orderIndex,
     text: question.question,
-    image_url: question.image || null,
+    image_url: question.image && question.image !== NO_IMAGE_SENTINEL ? question.image : null,
     video_url: null,
     explanation: revealCorrectness ? question.answer_tip : null,
     is_favorite: favoriteQuestionIds.has(question.id),
@@ -229,6 +254,17 @@ function readTestCancelFail(): boolean {
   return Boolean((window as Window & { __AV_TEST_CANCEL_FAIL__?: boolean }).__AV_TEST_CANCEL_FAIL__);
 }
 
+/**
+ * Mirrors the live backend's BILLING_RETURN_URL, which (confirmed live 2026-09-08) always points
+ * at /profile?checkout=success — MockApiClient models that same redirect-oriented contract rather
+ * than the acquirer's own interactive page (that page is backend-owned, out of scope here).
+ */
+function mockCheckoutReturnUrl(): string {
+  const base = import.meta.env.BASE_URL.endsWith('/') ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}/`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${base}profile?checkout=success`;
+}
+
 export class MockApiClient implements ApiClient {
   private lastAuthUser: AuthUser | null = null;
   private livesCurrent: number;
@@ -242,11 +278,25 @@ export class MockApiClient implements ApiClient {
   private favoriteQuestionIds: Set<string>;
   private readonly checkoutFailsFixture: boolean;
   private readonly cancelFailsFixture: boolean;
-  private checkoutInFlight: Promise<CheckoutResult> | null = null;
+  private checkoutInFlight: Promise<CheckoutInitResult> | null = null;
   private cancelInFlight: Promise<CancelSubscriptionResponse> | null = null;
+  /**
+   * Models the backend's async webhook activation: set by checkout(), Premium flips on once
+   * enough wall-clock time has passed. Time-based rather than poll-count-based on purpose — a
+   * count would activate early if anything unrelated (e.g. LivesCounter's own periodic
+   * getCurrentUser() refresh) happens to call the same polling entry points; a real backend's
+   * webhook likewise lands at some point in time, independent of who is asking. null = no mock
+   * checkout pending.
+   */
+  private checkoutInitiatedAt: number | null = null;
+  private static readonly MOCK_CHECKOUT_ACTIVATION_DELAY_MS = 800;
   checkoutCallCount = 0;
   cancelCallCount = 0;
   private readonly sessions = new Map<string, SessionRecord>();
+  /** GET /api/v1/progress: unique questions ever answered correctly, across all modes. */
+  private correctQuestionIds = new Set<string>();
+  /** GET /api/v1/progress: per-ticket attempts/best result, keyed by ticket id. */
+  private ticketProgress = new Map<string, TicketProgressRecord>();
 
   constructor(fixtures: MockApiClientFixtures = {}) {
     this.livesCurrent = fixtures.livesCurrent ?? MOCK_INITIAL_LIVES;
@@ -305,6 +355,9 @@ export class MockApiClient implements ApiClient {
     this.autoRenewCancelled = false;
     this.livesCurrent = MOCK_INITIAL_LIVES;
     this.errorQuestionIds = isEmptyErrors ? [] : [...this.initialErrorQuestionIds];
+    this.correctQuestionIds = new Set();
+    this.ticketProgress = new Map();
+    this.checkoutInitiatedAt = null;
     const user: AuthUser = {
       ...MOCK_AUTH_USERS[provider],
       is_premium: isPremiumLogin || isTrialLogin,
@@ -329,8 +382,21 @@ export class MockApiClient implements ApiClient {
     };
   }
 
+  /** See checkoutInitiatedAt doc comment. Checked on every getCurrentUser()/getSubscription() call. */
+  private maybeActivateCheckout(): void {
+    if (this.checkoutInitiatedAt === null) return;
+    if (Date.now() - this.checkoutInitiatedAt < MockApiClient.MOCK_CHECKOUT_ACTIVATION_DELAY_MS) return;
+    this.checkoutInitiatedAt = null;
+    this.premiumStatusFixture = 'trialing';
+    this.activatedPremium = true;
+    if (this.lastAuthUser) {
+      this.lastAuthUser = { ...this.lastAuthUser, is_premium: true };
+    }
+  }
+
   /** openapi.json GET /api/v1/users/me — UserOut. Sole user-state source; no Dashboard DTO. */
   async getCurrentUser(): Promise<CurrentUser> {
+    this.maybeActivateCheckout();
     return this.currentUser();
   }
 
@@ -339,6 +405,7 @@ export class MockApiClient implements ApiClient {
   }
 
   async getSubscription(): Promise<Subscription | null> {
+    this.maybeActivateCheckout();
     return this.currentSubscription();
   }
 
@@ -346,11 +413,16 @@ export class MockApiClient implements ApiClient {
     return MOCK_PREMIUM_OFFER;
   }
 
-  async checkout(request: CheckoutRequest): Promise<CheckoutResult> {
+  /** MockApiClient never validates Bearer tokens, so there is nothing to restore. */
+  restoreAccessToken(): void {
+    /* no-op */
+  }
+
+  async checkout(): Promise<CheckoutInitResult> {
     if (this.checkoutInFlight) {
       return this.checkoutInFlight;
     }
-    this.checkoutInFlight = this.performCheckout(request);
+    this.checkoutInFlight = this.performCheckout();
     try {
       return await this.checkoutInFlight;
     } finally {
@@ -358,14 +430,23 @@ export class MockApiClient implements ApiClient {
     }
   }
 
-  private async performCheckout(request: CheckoutRequest): Promise<CheckoutResult> {
+  /**
+   * openapi.json POST /api/v1/billing/checkout/init — mirrors the real, redirect-oriented
+   * contract: returns a confirmation_url and leaves Premium untouched until the activation delay
+   * elapses (see maybeActivateCheckout()), instead of activating it synchronously here.
+   */
+  private async performCheckout(): Promise<CheckoutInitResult> {
     this.checkoutCallCount += 1;
     if (typeof window !== 'undefined') {
       (window as Window & { __AV_TEST_CHECKOUT_CALLS__?: number }).__AV_TEST_CHECKOUT_CALLS__ =
         this.checkoutCallCount;
-    }
-    if (request.plan !== MOCK_PREMIUM_OFFER.plan) {
-      throw new Error('UNKNOWN_PLAN');
+      // Also mirrored into sessionStorage (test-only): the window property above does not survive
+      // the real full-page reload that checkout() triggers, but e2e needs the dedup count to.
+      try {
+        window.sessionStorage.setItem('__av_test_checkout_calls__', String(this.checkoutCallCount));
+      } catch {
+        /* ignore — test instrumentation only */
+      }
     }
     if (this.isPremiumUser()) {
       throw new Error('ALREADY_PREMIUM');
@@ -374,17 +455,14 @@ export class MockApiClient implements ApiClient {
       throw new Error('CHECKOUT_FAILED');
     }
 
-    this.premiumStatusFixture = 'trialing';
-    this.activatedPremium = true;
-    if (this.lastAuthUser) {
-      this.lastAuthUser = { ...this.lastAuthUser, is_premium: true };
-    }
+    this.checkoutInitiatedAt = Date.now();
 
-    const subscription = this.currentSubscription();
-    if (!subscription) {
-      throw new Error('CHECKOUT_FAILED');
-    }
-    return { status: 'success', subscription };
+    return {
+      paymentId: newSessionId(),
+      confirmationUrl: mockCheckoutReturnUrl(),
+      amountRub: MOCK_PREMIUM_OFFER.trial_price_rub,
+      description: `Пробный период ${MOCK_PREMIUM_OFFER.trial_days} дня за ${MOCK_PREMIUM_OFFER.trial_price_rub} ₽`,
+    };
   }
 
   async cancelSubscription(): Promise<CancelSubscriptionResponse> {
@@ -460,10 +538,22 @@ export class MockApiClient implements ApiClient {
 
   async startSession(input: StartSessionInput): Promise<StartSessionResult> {
     const { mode } = input;
-    const questions = this.buildSessionQuestions(mode, input.ticketId ?? null, input.topicId ?? null);
+    const ticketId = input.ticketId ?? null;
+    const questions = this.buildSessionQuestions(mode, ticketId, input.topicId ?? null);
     const revealCorrectness = mode !== 'gibdd_exam';
     const sessionId = newSessionId();
-    this.sessions.set(sessionId, { mode, questions, answers: new Map(), finished: false });
+    this.sessions.set(sessionId, { mode, ticketId, questions, answers: new Map(), finished: false });
+
+    if (mode === 'theory' && ticketId) {
+      const previous = this.ticketProgress.get(ticketId);
+      this.ticketProgress.set(ticketId, {
+        attempts: previous?.attempts ?? 0,
+        bestCorrect: previous?.bestCorrect ?? 0,
+        totalQuestions: questions.length,
+        lastAttemptAt: previous?.lastAttemptAt ?? null,
+        inProgress: true,
+      });
+    }
 
     return {
       sessionId,
@@ -483,7 +573,7 @@ export class MockApiClient implements ApiClient {
     const questionIndex = record.questions.findIndex((question) => question.id === input.questionId);
     const question = record.questions[questionIndex];
     if (!question) throw new Error('QUESTION_NOT_FOUND');
-    if (record.answers.has(input.questionId)) throw new Error('ANSWER_ALREADY_SUBMITTED');
+    if (record.answers.has(input.questionId)) throw new Error('QUESTION_ALREADY_ANSWERED');
 
     const selectedIndex = answerIndexFromId(question.id, input.answerId);
     const selected = question.answers[selectedIndex];
@@ -503,11 +593,23 @@ export class MockApiClient implements ApiClient {
         : 0;
 
     record.answers.set(input.questionId, { answerId: input.answerId, isCorrect });
+    if (isCorrect) this.correctQuestionIds.add(input.questionId);
 
     let sessionFinishedForced = false;
     if (!premium && !isCorrect) {
       this.livesCurrent = Math.max(0, this.livesCurrent - 1);
       if (this.livesCurrent === 0) sessionFinishedForced = true;
+    }
+
+    /**
+     * ТЗ §3.2: an exam extra/bonus question has no second chance — a mistake there force-ends the
+     * exam immediately. Confirmed against the live backend directly: session_finished_forced came
+     * back true right on an extra-question mistake, via a separate rule from the lives-exhaustion
+     * check above (base-question mistakes alone did not trigger it in that run).
+     */
+    const isExtraExamQuestion = record.mode === 'gibdd_exam' && questionIndex >= EXAM_BASE_QUESTION_COUNT;
+    if (!isCorrect && isExtraExamQuestion) {
+      sessionFinishedForced = true;
     }
 
     /** ТЗ §3.2: верный ответ в режиме «Ошибки» — удаление из истории ошибок. */
@@ -548,9 +650,14 @@ export class MockApiClient implements ApiClient {
   async finishSession(input: FinishSessionInput): Promise<FinishSessionResult> {
     const record = this.sessions.get(input.sessionId);
     if (!record) throw new Error('SESSION_NOT_FOUND');
+    if (record.finished) throw new Error('SESSION_ALREADY_FINISHED');
     record.finished = true;
 
     let correctCount = 0;
+    /**
+     * Live backend confirmed (2026-09-09): SessionFinishResponse.errors_count counts only
+     * answered-wrong questions, not unanswered ones — do not fold `unanswered` into this.
+     */
     let errorsCount = 0;
     let unanswered = 0;
     let baseMistakes = 0;
@@ -561,7 +668,6 @@ export class MockApiClient implements ApiClient {
       const isExamMode = record.mode === 'gibdd_exam';
       if (!answer) {
         unanswered += 1;
-        errorsCount += 1;
         if (isExamMode) {
           if (index < EXAM_BASE_QUESTION_COUNT) baseMistakes += 1;
           else extraMistakes += 1;
@@ -583,6 +689,17 @@ export class MockApiClient implements ApiClient {
       record.mode === 'gibdd_exam'
         ? computeExamPassed({ baseMistakes, extraMistakes, unanswered, timedOut: unanswered > 0 })
         : null;
+
+    if (record.mode === 'theory' && record.ticketId) {
+      const previous = this.ticketProgress.get(record.ticketId);
+      this.ticketProgress.set(record.ticketId, {
+        attempts: (previous?.attempts ?? 0) + 1,
+        bestCorrect: Math.max(previous?.bestCorrect ?? 0, correctCount),
+        totalQuestions: record.questions.length,
+        lastAttemptAt: new Date().toISOString(),
+        inProgress: false,
+      });
+    }
 
     return {
       sessionId: input.sessionId,
@@ -611,5 +728,54 @@ export class MockApiClient implements ApiClient {
   async removeFavorite(questionId: string): Promise<FavoriteToggleResult> {
     this.favoriteQuestionIds.delete(questionId);
     return { questionId, isFavorite: false };
+  }
+
+  /**
+   * GET /api/v1/progress on fixtures. Ticket status/attempts come from ticketProgress (updated by
+   * startSession/finishSession); topic/bank counts come from correctQuestionIds (unique questions
+   * ever answered correctly, any mode) — mirrors the "only correct, not all answered" backend rule.
+   */
+  async getProgress(): Promise<ProgressSnapshot> {
+    const tickets: TicketProgressOut[] = TICKETS.map((ticket) => {
+      const record = this.ticketProgress.get(ticket.id);
+      if (!record) {
+        return {
+          ticket_id: ticket.id,
+          status: 'not_started' as TicketProgressStatus,
+          attempts: 0,
+          best_correct: 0,
+          total_questions: QUESTIONS.length,
+          last_attempt_at: null,
+        };
+      }
+      const status: TicketProgressStatus = record.inProgress
+        ? 'in_progress'
+        : record.bestCorrect >= record.totalQuestions
+          ? 'passed'
+          : 'failed';
+      return {
+        ticket_id: ticket.id,
+        status,
+        attempts: record.attempts,
+        best_correct: record.bestCorrect,
+        total_questions: record.totalQuestions,
+        last_attempt_at: record.lastAttemptAt,
+      };
+    });
+
+    const topics: TopicProgressOut[] = TOPICS.map((topic) => {
+      const topicQuestionIds = QUESTIONS.filter((question) => question.topic.includes(topic.title)).map(
+        (question) => question.id,
+      );
+      const questionsPassed = topicQuestionIds.filter((id) => this.correctQuestionIds.has(id)).length;
+      return { topic_id: topic.id, questions_total: topicQuestionIds.length, questions_passed: questionsPassed };
+    });
+
+    const bank: BankProgressOut = {
+      questions_total: QUESTIONS.length,
+      questions_passed: this.correctQuestionIds.size,
+    };
+
+    return mapProgress({ tickets, topics, bank });
   }
 }

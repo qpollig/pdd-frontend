@@ -7,8 +7,8 @@ import AppButton from '../components/ui/AppButton.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import { canSubmitCheckout, checkoutKind, checkoutPayLabel } from '../domain/checkout';
-import { formatRuDate, premiumActiveHeadline } from '../domain/paywall';
-import { fadeUp, popIn } from '../motion/variants';
+import { premiumActiveHeadline } from '../domain/paywall';
+import { fadeUp } from '../motion/variants';
 import { useSessionStore } from '../stores/sessionStore';
 
 const session = useSessionStore();
@@ -61,37 +61,13 @@ async function pay() {
       </AppButton>
     </div>
 
-    <div v-else-if="kind === 'success'" class="min-w-0" data-testid="checkout-success">
+    <div v-else-if="kind === 'redirecting'" class="min-w-0" data-testid="checkout-redirecting">
       <h1 class="text-xl font-semibold sm:text-2xl">Оформление</h1>
-      <span
-        v-motion
-        :initial="popIn().initial"
-        :enter="popIn().enter"
-        class="mt-4 flex h-12 w-12 items-center justify-center rounded-full bg-correct text-white"
-        aria-hidden="true"
-      >
-        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="3">
-          <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </span>
-      <h2 class="mt-3 text-lg font-semibold leading-snug">Premium подключён</h2>
+      <AppSpinner label="Переход к оплате" class="mt-6" />
       <p class="mt-3 text-sm leading-relaxed text-text-secondary">
-        Пробный период активен. Сейчас доступны бесконечные жизни. Оплата тестовая: реальный
-        платёжный провайдер ещё не подключён.
+        Сейчас откроется страница оплаты. После оплаты вы вернётесь обратно и увидите статус
+        Premium в профиле.
       </p>
-      <p
-        v-if="session.subscription?.paid_until"
-        class="mt-3 text-sm leading-relaxed text-text-secondary"
-      >
-        Подписка активна до: {{ formatRuDate(session.subscription.paid_until) }}.
-      </p>
-      <AppButton
-        class="mt-6 w-full sm:w-auto"
-        data-testid="checkout-success-cta"
-        @click="router.push({ name: 'dashboard' })"
-      >
-        На главную
-      </AppButton>
     </div>
 
     <div v-else-if="session.premiumOffer" class="min-w-0">

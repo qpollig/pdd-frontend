@@ -8,6 +8,7 @@ export interface Topic {
   id: string;
   title: string;
   orderIndex: number;
+  questionsCount: number;
 }
 
 /**

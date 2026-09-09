@@ -7,26 +7,26 @@ import AppButton from '../components/ui/AppButton.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import { useCatalogStore } from '../stores/catalogStore';
+import { useProgressStore } from '../stores/progressStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { useTicketStore } from '../stores/ticketStore';
 import { fadeUp, staggerDelay } from '../motion/variants';
-
-/**
- * Frontend constant: full official ГИБДД question bank (40 tickets × 20 questions).
- * Not from openapi.json — there is no bank-size endpoint; this is a fixed domain fact (ТЗ §3.1).
- */
-const BANK_QUESTION_TOTAL = 800;
 
 const session = useSessionStore();
 const catalog = useCatalogStore();
-const ticketStore = useTicketStore();
+const progress = useProgressStore();
 const router = useRouter();
 
+/**
+ * `:key="route.path"` on the parent RouterView (AppLayout.vue) remounts this screen on every
+ * navigation, including a return from a ticket session, so onMounted alone keeps progress fresh —
+ * no onActivated/keep-alive needed.
+ */
 onMounted(() => {
   void session.loadCurrentUser();
   if (catalog.tickets.length === 0) {
     void catalog.loadCatalog();
   }
+  void progress.loadProgress();
 });
 
 const loading = computed(() => session.loading || catalog.loading);
@@ -44,6 +44,10 @@ function openTheory() {
   void router.push({ name: 'tickets', query: { mode: 'theory' } });
 }
 
+/** D2: server-computed counters (UserOut.errors_count/favorites_count) drive both the badge and the disabled gate. */
+const errorsCount = computed(() => session.user?.errors_count ?? 0);
+const favoritesCount = computed(() => session.user?.favorites_count ?? 0);
+
 function openErrors() {
   void router.push({ name: 'errors-session', query: { mode: 'errors' } });
 }
@@ -56,17 +60,10 @@ function openFavorites() {
   void router.push({ name: 'favorites-session', query: { mode: 'favorites' } });
 }
 
-/**
- * Frontend-derived, session-only: openapi.json has no per-ticket progress endpoint, so this comes
- * from ticketStore's in-memory session progress (same source StatisticsScreen uses) rather than a
- * fabricated backend counter. Resets on reload/logout.
- */
+/** GET /api/v1/progress (via progressStore) — server-computed, survives reload. */
 const ticketsTotal = computed(() => catalog.tickets.length);
 const ticketsCompleted = computed(
-  () => catalog.tickets.filter((ticket) => ticketStore.isTicketComplete(ticket.id)).length,
-);
-const questionsAnswered = computed(() =>
-  Object.keys(ticketStore.progress).reduce((sum, id) => sum + ticketStore.getTicketStats(id).answered, 0),
+  () => catalog.tickets.filter((ticket) => progress.ticketStatus(ticket.id) === 'passed').length,
 );
 
 const ticketsPercent = computed(() => {
@@ -134,8 +131,8 @@ const ticketsPercent = computed(() => {
           v-motion
           :initial="fadeUp().initial"
           :enter="fadeUp(staggerDelay(0)).enter"
-          :current="questionsAnswered"
-          :total="BANK_QUESTION_TOTAL"
+          :current="progress.bank.passed"
+          :total="progress.bank.total"
         />
         <LivesCounter
           v-motion
@@ -144,6 +141,8 @@ const ticketsPercent = computed(() => {
           :current="session.user.lives_current"
           :max="session.user.lives_max"
           :is-premium="session.user.is_premium"
+          :lives-regen-at="session.user.lives_regen_at"
+          @regen-due="session.loadCurrentUser()"
         />
         <section
           v-motion
@@ -173,12 +172,23 @@ const ticketsPercent = computed(() => {
       <section v-motion :initial="fadeUp().initial" :enter="fadeUp(staggerDelay(3)).enter">
         <h2 class="text-sm font-medium text-text-secondary">Другие режимы</h2>
         <div class="mt-3 flex flex-col gap-3 sm:flex-row">
-          <AppButton variant="secondary" class="w-full sm:w-auto" @click="openErrors">
+          <AppButton
+            variant="secondary"
+            class="w-full sm:w-auto"
+            :disabled="errorsCount === 0"
+            @click="openErrors"
+          >
             <svg viewBox="0 0 24 24" class="mr-2 h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M3 12a9 9 0 1 1 2.64 6.36" stroke-linecap="round" stroke-linejoin="round" />
               <path d="M3 20v-5h5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             Ошибки
+            <span
+              v-if="errorsCount > 0"
+              class="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold tabular-nums text-text-on-accent"
+            >
+              {{ errorsCount }}
+            </span>
           </AppButton>
           <AppButton variant="secondary" class="w-full sm:w-auto" @click="openExam">
             <svg viewBox="0 0 24 24" class="mr-2 h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -188,7 +198,12 @@ const ticketsPercent = computed(() => {
             </svg>
             Экзамен ГИБДД
           </AppButton>
-          <AppButton variant="secondary" class="w-full sm:w-auto" @click="openFavorites">
+          <AppButton
+            variant="secondary"
+            class="w-full sm:w-auto"
+            :disabled="favoritesCount === 0"
+            @click="openFavorites"
+          >
             <svg viewBox="0 0 24 24" class="mr-2 h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path
                 d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.8L12 16.9l-5.2 2.62.99-5.8-4.21-4.1 5.82-.85L12 3.5z"
@@ -196,6 +211,12 @@ const ticketsPercent = computed(() => {
               />
             </svg>
             Избранное
+            <span
+              v-if="favoritesCount > 0"
+              class="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-semibold tabular-nums text-text-on-accent"
+            >
+              {{ favoritesCount }}
+            </span>
           </AppButton>
         </div>
       </section>

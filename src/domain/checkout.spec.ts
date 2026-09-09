@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PremiumOffer } from '../api/types';
-import {
-  MOCK_PAYMENT_PROVIDER_PLACEHOLDER,
-  canSubmitCheckout,
-  checkoutKind,
-  checkoutPayLabel,
-} from './checkout';
+import { canSubmitCheckout, checkoutKind, checkoutPayLabel } from './checkout';
 
 const offer: PremiumOffer = {
   plan: 'trial_1rub_299',
@@ -28,7 +23,7 @@ describe('checkout presentation', () => {
     ).toBe('idle');
   });
 
-  it('is processing while a payment is in flight', () => {
+  it('is processing while checkout/init is in flight', () => {
     expect(
       checkoutKind({
         loading: false,
@@ -40,16 +35,16 @@ describe('checkout presentation', () => {
     ).toBe('processing');
   });
 
-  it('is success after mock payment succeeds', () => {
+  it('is redirecting once confirmation_url is known, right before the browser navigates away', () => {
     expect(
       checkoutKind({
         loading: false,
         loadError: null,
-        isPremium: true,
+        isPremium: false,
         hasOffer: true,
-        checkoutStatus: 'success',
+        checkoutStatus: 'redirecting',
       }),
-    ).toBe('success');
+    ).toBe('redirecting');
   });
 
   it('is already-premium when the user already has Premium', () => {
@@ -64,19 +59,19 @@ describe('checkout presentation', () => {
     ).toBe('already-premium');
   });
 
-  it('prefers success over already-premium after this checkout', () => {
+  it('prefers already-premium over redirecting if isPremium flips mid-flow', () => {
     expect(
       checkoutKind({
         loading: false,
         loadError: null,
         isPremium: true,
         hasOffer: true,
-        checkoutStatus: 'success',
+        checkoutStatus: 'redirecting',
       }),
-    ).toBe('success');
+    ).toBe('already-premium');
   });
 
-  it('is payment-error after a failed mock payment', () => {
+  it('is payment-error after checkout/init fails', () => {
     expect(
       checkoutKind({
         loading: false,
@@ -92,15 +87,11 @@ describe('checkout presentation', () => {
     expect(canSubmitCheckout('idle')).toBe(true);
     expect(canSubmitCheckout('payment-error')).toBe(true);
     expect(canSubmitCheckout('processing')).toBe(false);
-    expect(canSubmitCheckout('success')).toBe(false);
+    expect(canSubmitCheckout('redirecting')).toBe(false);
     expect(canSubmitCheckout('already-premium')).toBe(false);
   });
 
   it('labels the CTA with the TZ trial price', () => {
     expect(checkoutPayLabel(offer)).toBe('Оплатить 1 ₽');
-  });
-
-  it('does not use a real payment-provider token', () => {
-    expect(MOCK_PAYMENT_PROVIDER_PLACEHOLDER).toBe('mock-provider-placeholder');
   });
 });

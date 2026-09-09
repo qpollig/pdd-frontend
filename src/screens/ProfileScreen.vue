@@ -1,19 +1,40 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import AppButton from '../components/ui/AppButton.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import CancelSubscriptionModal from '../components/profile/CancelSubscriptionModal.vue';
+import LivesCounter from '../components/dashboard/LivesCounter.vue';
 import { useSessionStore } from '../stores/sessionStore';
+import { useCheckoutReturn } from '../composables/useCheckoutReturn';
+import { isCheckoutReturnQuery } from '../domain/checkoutReturn';
 import { formatRuDate, subscriptionStatusLabel } from '../domain/paywall';
 import { fadeUp, staggerDelay } from '../motion/variants';
 
 const session = useSessionStore();
 const router = useRouter();
+const route = useRoute();
+
+/**
+ * D1: the live backend's BILLING_RETURN_URL lands directly on /profile?checkout=success (see D1
+ * report) — there is no dedicated /checkout/return route. `?checkout=success` only means "back
+ * from the payment redirect", never proof Premium is active; useCheckoutReturn owns the bounded
+ * polling that turns it into a real, backend-confirmed state.
+ */
+const isCheckoutReturn = computed(() => isCheckoutReturnQuery(route.query.checkout));
+const checkoutReturn = useCheckoutReturn({
+  checkoutQuery: () => route.query.checkout,
+  isPremium: () => session.isPremium,
+  refresh: () => session.loadProfile(),
+});
 
 onMounted(() => {
-  void session.loadProfile();
+  // useCheckoutReturn already drives session.loadProfile() as its own poll — avoid a redundant
+  // parallel fetch on the very same mount.
+  if (!isCheckoutReturn.value) {
+    void session.loadProfile();
+  }
 });
 
 const showCancelModal = ref(false);
@@ -88,6 +109,29 @@ function logout() {
     <AppSpinner v-if="session.loading && !session.user" />
     <ErrorState v-else-if="session.error && !session.user" title="Ошибка" :description="session.error" />
     <div v-else-if="session.user" class="mt-6 space-y-4">
+      <div
+        v-if="checkoutReturn.status.value === 'checking'"
+        class="rounded-card border border-border bg-surface-raised p-4 text-sm"
+        role="status"
+        data-testid="checkout-return-checking"
+      >
+        <AppSpinner label="Проверяем оплату" />
+      </div>
+      <div
+        v-else-if="checkoutReturn.status.value === 'success'"
+        class="rounded-card border border-correct/30 bg-correct/10 p-4 text-sm font-medium text-correct"
+        role="status"
+        data-testid="checkout-return-success"
+      >
+        Premium подключён.
+      </div>
+      <div
+        v-else-if="checkoutReturn.status.value === 'timeout'"
+        class="rounded-card border border-border bg-surface-raised p-4 text-sm leading-relaxed"
+        data-testid="checkout-return-timeout"
+      >
+        Платёж обрабатывается. Premium ещё не активирован. Попробуйте обновить страницу позже.
+      </div>
       <section
         v-motion
         :initial="fadeUp().initial"
@@ -111,10 +155,20 @@ function logout() {
           </div>
         </div>
       </section>
-      <section
+      <LivesCounter
         v-motion
         :initial="fadeUp().initial"
         :enter="fadeUp(staggerDelay(1)).enter"
+        :current="session.user.lives_current"
+        :max="session.user.lives_max"
+        :is-premium="session.user.is_premium"
+        :lives-regen-at="session.user.lives_regen_at"
+        @regen-due="session.loadCurrentUser()"
+      />
+      <section
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(2)).enter"
         class="rounded-card border border-border bg-surface p-5"
       >
         <h2 class="text-sm font-medium text-text-secondary">Подписка</h2>
@@ -158,7 +212,7 @@ function logout() {
       <div
         v-motion
         :initial="fadeUp().initial"
-        :enter="fadeUp(staggerDelay(2)).enter"
+        :enter="fadeUp(staggerDelay(3)).enter"
         class="flex flex-col gap-3 sm:flex-row"
       >
         <AppButton v-if="!session.isPremium" class="w-full sm:w-auto" @click="router.push('/paywall')">

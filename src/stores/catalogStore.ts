@@ -25,6 +25,13 @@ interface ActiveTicketSession {
   questions: Question[];
 }
 
+/** POST /api/v1/tickets/session/start 403 detail (openapi.json) — Free user with no lives left. */
+const OUT_OF_LIVES_CODE = 'OUT_OF_LIVES';
+
+function isOutOfLivesError(cause: unknown): boolean {
+  return cause instanceof Error && cause.message === OUT_OF_LIVES_CODE;
+}
+
 export const useCatalogStore = defineStore('catalog', () => {
   const tickets = ref<Ticket[]>([]);
   const topics = ref<Topic[]>([]);
@@ -34,6 +41,9 @@ export const useCatalogStore = defineStore('catalog', () => {
   const examTimeLimitSeconds = ref<number | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  /** True when the last startSession call was rejected with 403 OUT_OF_LIVES — a distinct state
+   * from `error`, so TicketSessionScreen can render the dedicated lives-recovery UI (Блок C). */
+  const outOfLives = ref(false);
 
   async function loadCatalog() {
     loading.value = true;
@@ -60,6 +70,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function loadTicket(id: string) {
     loading.value = true;
     error.value = null;
+    outOfLives.value = false;
     currentTicket.value = null;
     activeSessionId.value = null;
     try {
@@ -74,8 +85,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         category: meta.category,
         questions: started.questions,
       };
-    } catch {
-      error.value = 'Билет не найден';
+    } catch (cause) {
+      if (isOutOfLivesError(cause)) {
+        outOfLives.value = true;
+      } else {
+        error.value = 'Билет не найден';
+      }
     } finally {
       loading.value = false;
     }
@@ -85,6 +100,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function loadTopicSession(id: string) {
     loading.value = true;
     error.value = null;
+    outOfLives.value = false;
     currentTicket.value = null;
     activeSessionId.value = null;
     try {
@@ -100,8 +116,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         topicTitle: meta.title,
         questions: started.questions,
       };
-    } catch {
-      error.value = 'Не удалось загрузить тему';
+    } catch (cause) {
+      if (isOutOfLivesError(cause)) {
+        outOfLives.value = true;
+      } else {
+        error.value = 'Не удалось загрузить тему';
+      }
     } finally {
       loading.value = false;
     }
@@ -110,6 +130,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function loadErrorQuestions() {
     loading.value = true;
     error.value = null;
+    outOfLives.value = false;
     currentTicket.value = null;
     activeSessionId.value = null;
     try {
@@ -121,8 +142,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         category: null,
         questions: started.questions,
       };
-    } catch {
-      error.value = 'Не удалось загрузить ошибки';
+    } catch (cause) {
+      if (isOutOfLivesError(cause)) {
+        outOfLives.value = true;
+      } else {
+        error.value = 'Не удалось загрузить ошибки';
+      }
     } finally {
       loading.value = false;
     }
@@ -131,6 +156,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function loadExamSession() {
     loading.value = true;
     error.value = null;
+    outOfLives.value = false;
     currentTicket.value = null;
     activeSessionId.value = null;
     examTimeLimitSeconds.value = null;
@@ -144,8 +170,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         category: null,
         questions: started.questions,
       };
-    } catch {
-      error.value = 'Не удалось начать экзамен';
+    } catch (cause) {
+      if (isOutOfLivesError(cause)) {
+        outOfLives.value = true;
+      } else {
+        error.value = 'Не удалось начать экзамен';
+      }
     } finally {
       loading.value = false;
     }
@@ -155,6 +185,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function loadFavoritesSession() {
     loading.value = true;
     error.value = null;
+    outOfLives.value = false;
     currentTicket.value = null;
     activeSessionId.value = null;
     try {
@@ -166,8 +197,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         category: null,
         questions: started.questions,
       };
-    } catch {
-      error.value = 'Не удалось загрузить избранное';
+    } catch (cause) {
+      if (isOutOfLivesError(cause)) {
+        outOfLives.value = true;
+      } else {
+        error.value = 'Не удалось загрузить избранное';
+      }
     } finally {
       loading.value = false;
     }
@@ -181,11 +216,19 @@ export const useCatalogStore = defineStore('catalog', () => {
     };
   }
 
-  /** Errors count without mutating any session state — used only to drive post-session nav. */
+  /**
+   * Remaining error-history count, used only to drive post-session nav (next-error vs
+   * back-to-theory). Reads GET /users/me.errors_count instead of starting an errors session just
+   * to count its questions — confirmed on the live backend that this field is exactly the number
+   * of questions a fresh errors session would return, and updates immediately per answered
+   * question (not only at finish), so it's accurate right when TicketPlayer calls this at the end
+   * of an errors run. Starting a real session here would leave it orphaned/in_progress on the
+   * backend, since nothing ever answers or finishes it.
+   */
   async function peekErrorQuestionCount(): Promise<number> {
     try {
-      const started = await apiClient.startSession({ mode: 'errors' });
-      return started.questions.length;
+      const user = await apiClient.getCurrentUser();
+      return user.errors_count;
     } catch {
       return 0;
     }
@@ -199,6 +242,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     examTimeLimitSeconds,
     loading,
     error,
+    outOfLives,
     loadCatalog,
     loadTicket,
     loadTopicSession,

@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { MOCK_INITIAL_LIVES } from '../api/livesFixture';
 import { useSessionStore } from './sessionStore';
@@ -25,6 +25,7 @@ describe('sessionStore loadCurrentUser / loadProfile', () => {
       errors_count: 2,
       favorites_count: 1,
       lives_regen_at: null,
+      lives_reset_at: null,
     });
 
     await session.loadCurrentUser();
@@ -57,6 +58,86 @@ describe('sessionStore loadCurrentUser / loadProfile', () => {
     expect(session.user).not.toBeNull();
     expect(session.subscription).toBeNull();
     expect(session.error).toBeNull();
+  });
+});
+
+describe('sessionStore hydrateFromCheckoutBridge', () => {
+  const BRIDGE_KEY = 'av_checkout_auth_bridge';
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  it('does nothing when there is no bridge entry — ordinary app boot is unaffected', async () => {
+    const session = useSessionStore();
+    const spy = vi.spyOn(apiClient, 'getCurrentUser');
+
+    await session.hydrateFromCheckoutBridge();
+
+    expect(session.accessToken).toBeNull();
+    expect(session.user).toBeNull();
+    expect(session.isAuthenticated).toBe(false);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('restores accessToken and loads the user from a valid bridge entry, then deletes it', async () => {
+    sessionStorage.setItem(BRIDGE_KEY, 'mock-access-token-yandex');
+    const session = useSessionStore();
+    const restoreSpy = vi.spyOn(apiClient, 'restoreAccessToken');
+
+    await session.hydrateFromCheckoutBridge();
+
+    expect(session.accessToken).toBe('mock-access-token-yandex');
+    expect(session.user).not.toBeNull();
+    expect(session.isAuthenticated).toBe(true);
+    expect(restoreSpy).toHaveBeenCalledWith('mock-access-token-yandex');
+    expect(sessionStorage.getItem(BRIDGE_KEY)).toBeNull();
+  });
+
+  it('does not create a fake authenticated state from an invalid/stale token, and still deletes the bridge', async () => {
+    sessionStorage.setItem(BRIDGE_KEY, 'stale-token');
+    vi.spyOn(apiClient, 'getCurrentUser').mockRejectedValueOnce(new Error('UNAUTHORIZED'));
+    const session = useSessionStore();
+
+    await session.hydrateFromCheckoutBridge();
+
+    expect(session.accessToken).toBeNull();
+    expect(session.user).toBeNull();
+    expect(session.isAuthenticated).toBe(false);
+    expect(sessionStorage.getItem(BRIDGE_KEY)).toBeNull();
+  });
+
+  it('leaves an already-authenticated session untouched, even if a bridge entry exists', async () => {
+    sessionStorage.setItem(BRIDGE_KEY, 'some-other-token');
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    const tokenBeforeHydrate = session.accessToken;
+    const spy = vi.spyOn(apiClient, 'getCurrentUser');
+
+    await session.hydrateFromCheckoutBridge();
+
+    expect(session.accessToken).toBe(tokenBeforeHydrate);
+    expect(spy).not.toHaveBeenCalled();
+    // Bridge from an unrelated, still-pending checkout is left alone here — only ever consumed
+    // when there is no live session to protect.
+    expect(sessionStorage.getItem(BRIDGE_KEY)).toBe('some-other-token');
+  });
+
+  it('never touches localStorage while hydrating — sessionStorage only, one-shot, tab-scoped', async () => {
+    sessionStorage.setItem(BRIDGE_KEY, 'mock-access-token-yandex');
+    const session = useSessionStore();
+
+    await session.hydrateFromCheckoutBridge();
+
+    expect(localStorage.length).toBe(0);
   });
 });
 
@@ -224,9 +305,23 @@ describe('sessionStore paywall', () => {
 });
 
 describe('sessionStore checkout', () => {
+  const originalLocation = window.location;
+
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.useFakeTimers();
+    sessionStorage.clear();
+    // checkout/init is redirect-oriented (D1): submitCheckout() does a real window.location.href
+    // assignment. Stub location so that's observable without it navigating the test environment.
+    // @ts-expect-error -- deliberately replacing the read-only `location` for this test only.
+    delete window.location;
+    window.location = { ...originalLocation, href: 'http://localhost:3000/checkout' } as Location;
+  });
+
+  afterEach(() => {
+    window.location = originalLocation;
+    vi.useRealTimers();
   });
 
   it('starts idle after loadCheckout for a free user', async () => {
@@ -240,21 +335,33 @@ describe('sessionStore checkout', () => {
     expect(session.premiumOffer?.plan).toBe('trial_1rub_299');
   });
 
-  it('submits mock payment and writes trial Premium into session', async () => {
+  it('checkout/init does not activate Premium locally, and the browser is sent to confirmation_url', async () => {
     const session = useSessionStore();
     await session.loginWithProvider('yandex');
     await session.loadCheckout();
     const result = await session.submitCheckout();
 
-    expect(result?.status).toBe('success');
-    expect(session.checkoutStatus).toBe('success');
-    expect(session.isPremium).toBe(true);
-    expect(session.user?.is_premium).toBe(true);
-    expect(session.subscription?.status).toBe('trialing');
-    expect(session.subscription?.auto_renew).toBe(true);
+    expect(result?.confirmationUrl).toContain('checkout=success');
+    expect(session.checkoutStatus).toBe('redirecting');
+    // Not activated by the init call itself — only a later, backend-confirmed poll can do that.
+    expect(session.isPremium).toBe(false);
+    expect(session.user?.is_premium).toBe(false);
+    expect(window.location.href).toBe(result?.confirmationUrl);
   });
 
-  it('records a payment error and keeps Free state', async () => {
+  it('stashes the current accessToken into the one-shot checkout bridge right before redirecting', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadCheckout();
+    const tokenBeforeRedirect = session.accessToken;
+
+    await session.submitCheckout();
+
+    expect(sessionStorage.getItem('av_checkout_auth_bridge')).toBe(tokenBeforeRedirect);
+    expect(localStorage.getItem('av_checkout_auth_bridge')).toBeNull();
+  });
+
+  it('records an init error and keeps Free state, without touching the bridge', async () => {
     const session = useSessionStore();
     await session.loginWithProvider('yandex');
     await session.loadCheckout();
@@ -266,9 +373,10 @@ describe('sessionStore checkout', () => {
     expect(session.checkoutStatus).toBe('error');
     expect(session.checkoutError).toBeTruthy();
     expect(session.isPremium).toBe(false);
+    expect(sessionStorage.getItem('av_checkout_auth_bridge')).toBeNull();
   });
 
-  it('sets processing while checkout is in flight', async () => {
+  it('sets processing while checkout/init is in flight, then redirecting once it resolves', async () => {
     const session = useSessionStore();
     await session.loginWithProvider('yandex');
     await session.loadCheckout();
@@ -277,14 +385,10 @@ describe('sessionStore checkout', () => {
     const pending = new Promise<Awaited<ReturnType<typeof apiClient.checkout>>>((resolve) => {
       release = () =>
         resolve({
-          status: 'success',
-          subscription: {
-            id: '00000000-0000-4000-8000-000000000300',
-            status: 'trialing',
-            auto_renew: true,
-            paid_until: '2026-09-04',
-            price_rub: 299,
-          },
+          paymentId: 'pay_1',
+          confirmationUrl: 'http://backend.example/mock-pay/pay_1',
+          amountRub: 1,
+          description: 'Пробный период',
         });
     });
     vi.spyOn(apiClient, 'checkout').mockReturnValue(pending);
@@ -293,7 +397,7 @@ describe('sessionStore checkout', () => {
     expect(session.checkoutStatus).toBe('processing');
     release();
     await submitPromise;
-    expect(session.checkoutStatus).toBe('success');
+    expect(session.checkoutStatus).toBe('redirecting');
   });
 
   it('does not send a second checkout request while processing', async () => {
@@ -305,14 +409,10 @@ describe('sessionStore checkout', () => {
     const pending = new Promise<Awaited<ReturnType<typeof apiClient.checkout>>>((resolve) => {
       release = () =>
         resolve({
-          status: 'success',
-          subscription: {
-            id: '00000000-0000-4000-8000-000000000300',
-            status: 'trialing',
-            auto_renew: true,
-            paid_until: '2026-09-04',
-            price_rub: 299,
-          },
+          paymentId: 'pay_1',
+          confirmationUrl: 'http://backend.example/mock-pay/pay_1',
+          amountRub: 1,
+          description: 'Пробный период',
         });
     });
     const spy = vi.spyOn(apiClient, 'checkout').mockReturnValue(pending);
@@ -325,11 +425,14 @@ describe('sessionStore checkout', () => {
     await first;
   });
 
-  it('does not submit payment when the user is already Premium', async () => {
+  it('does not submit a second payment once Premium is confirmed active', async () => {
     const session = useSessionStore();
     await session.loginWithProvider('yandex');
     await session.loadCheckout();
     await session.submitCheckout();
+    // MockApiClient confirms the mock "webhook" after its activation delay (see MockApiClient.spec.ts).
+    await vi.advanceTimersByTimeAsync(800);
+    await session.loadCurrentUser();
     expect(session.isPremium).toBe(true);
 
     await session.loadCheckout();
@@ -345,9 +448,22 @@ describe('sessionStore checkout', () => {
 });
 
 describe('sessionStore cancelAutoRenew', () => {
+  const originalLocation = window.location;
+
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.useFakeTimers();
+    // submitCheckout() below does a real window.location.href assignment (D1) — stub it so the
+    // test environment isn't actually navigated.
+    // @ts-expect-error -- deliberately replacing the read-only `location` for this test only.
+    delete window.location;
+    window.location = { ...originalLocation, href: 'http://localhost:3000/checkout' } as Location;
+  });
+
+  afterEach(() => {
+    window.location = originalLocation;
+    vi.useRealTimers();
   });
 
   async function loginAsTrialPremium() {
@@ -355,6 +471,10 @@ describe('sessionStore cancelAutoRenew', () => {
     await session.loginWithProvider('yandex');
     await session.loadCheckout();
     await session.submitCheckout();
+    // MockApiClient confirms the mock "webhook" after its activation delay (see MockApiClient.spec.ts);
+    // loadProfile() (not loadCurrentUser()) so subscription is populated too, like the real return flow.
+    await vi.advanceTimersByTimeAsync(800);
+    await session.loadProfile();
     return session;
   }
 

@@ -108,15 +108,34 @@ test.describe('Profile: cancel auto-renew', () => {
     await loginTrialPremium(page);
     await openHeaderLink(page, 'Профиль');
     await page.getByTestId('profile-cancel-auto-renew').click();
+    await expect(page.getByTestId('cancel-subscription-confirm')).toBeVisible();
 
-    const confirm = page.getByTestId('cancel-subscription-confirm');
-    await Promise.all([confirm.click(), confirm.click()]);
+    /**
+     * Two separate page.locator().click() calls raced via Promise.all each run Playwright's own
+     * actionability protocol (hover, wait for the leave-transition to settle, then dispatch) — on
+     * a button whose success handler starts closing the modal after the first click, the second
+     * call's wait can resolve its element handle right as Vue's post-transition unmount tears the
+     * node out, surfacing as "element was detached from the DOM" under load. A real double-click
+     * fires both native click events back-to-back in one synchronous browser turn, before Vue's
+     * `disabled` patch or the modal-close reactivity ever runs — dispatch it that way instead, so
+     * the test still proves the app-level guard (sessionStore.cancelAutoRenew's synchronous
+     * `processing` check) rather than racing Playwright's own automation timing.
+     */
+    const calls = await page.evaluate(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        '[data-testid="cancel-subscription-confirm"]',
+      );
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return true;
+    });
+    expect(calls).toBe(true);
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const calls = await page.evaluate(
+    const callCount = await page.evaluate(
       () => (window as Window & { __AV_TEST_CANCEL_CALLS__?: number }).__AV_TEST_CANCEL_CALLS__,
     );
-    expect(calls).toBe(1);
+    expect(callCount).toBe(1);
   });
 
   test('subscription state does not survive a full reload (in-memory session only)', async ({ page }) => {

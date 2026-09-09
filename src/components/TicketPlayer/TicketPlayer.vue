@@ -2,14 +2,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { FinishSessionResult } from '../../api/ApiClient';
-import { formatExamClock } from '../../domain/examRules';
+import { EXAM_BASE_QUESTION_COUNT, formatExamClock } from '../../domain/examRules';
 import { createCountdownTimer } from '../../domain/examTimer';
 import type { PostSessionActionId } from '../../domain/postSessionNav';
 import type { Question } from '../../domain/question';
 import { useCatalogStore } from '../../stores/catalogStore';
+import { useProgressStore } from '../../stores/progressStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useTicketStore } from '../../stores/ticketStore';
-import type { TicketMode } from '../../types/ticket';
+import type { ForcedFinishReason, TicketMode } from '../../types/ticket';
 import logo from '../../assets/logo.png';
 import AppButton from '../ui/AppButton.vue';
 import FavoriteButton from './FavoriteButton.vue';
@@ -30,6 +31,7 @@ const router = useRouter();
 const session = useSessionStore();
 const catalog = useCatalogStore();
 const store = useTicketStore();
+const progressStore = useProgressStore();
 
 const isPaywallOpen = ref(false);
 const isResultOpen = ref(false);
@@ -39,6 +41,7 @@ const completing = ref(false);
 const finishResult = ref<FinishSessionResult | null>(null);
 const remainingErrorCount = ref(0);
 const extraQuestionsNotice = ref<string | null>(null);
+const forcedFinishReason = ref<ForcedFinishReason>(null);
 
 function pluralizeQuestions(count: number): string {
   const mod10 = count % 10;
@@ -54,6 +57,7 @@ function beginSession() {
   completing.value = false;
   remainingErrorCount.value = 0;
   extraQuestionsNotice.value = null;
+  forcedFinishReason.value = null;
   submitError.value = null;
   store.startTicket(props.ticketId, props.questions, props.mode, {
     remainingSeconds: catalog.examTimeLimitSeconds ?? undefined,
@@ -78,6 +82,9 @@ const answersLocked = computed(
 );
 
 function goToQuestion(index: number) {
+  // Once a forced-finish is underway, the exam is over — no jumping to another question while
+  // it wraps up (see completeSession()).
+  if (completing.value) return;
   store.goToQuestion(props.ticketId, index);
 }
 
@@ -107,6 +114,11 @@ async function selectAnswer(answerId: string) {
       extraQuestionsNotice.value = `Ошибка по теме — добавлено ещё ${count} ${pluralizeQuestions(count)} по той же теме.`;
     }
     if (result.sessionFinishedForced) {
+      // ТЗ §3.2: an exam extra/bonus question has no second chance — a mistake there is the one
+      // forced-finish case with its own SessionResultModal message (see ForcedFinishReason).
+      if (props.mode === 'exam' && currentIndex.value >= EXAM_BASE_QUESTION_COUNT && result.isCorrect === false) {
+        forcedFinishReason.value = 'extra_question_mistake';
+      }
       await completeSession('finished');
     }
   } catch (cause) {
@@ -115,6 +127,14 @@ async function selectAnswer(answerId: string) {
       submitError.value = 'Жизни закончились. Дальнейшие ответы недоступны.';
       return;
     }
+    if (message === 'SESSION_ALREADY_FINISHED') {
+      // Backend already considers this session over (e.g. a forced-finish we missed) — go
+      // straight to the terminal/result state instead of a red "try again" toast.
+      await completeSession('finished');
+      return;
+    }
+    // QUESTION_ALREADY_ANSWERED and any other failure keep this generic retry message — neither
+    // is a finished-session signal.
     submitError.value = 'Не удалось отправить ответ. Попробуйте ещё раз.';
   } finally {
     submitting.value = false;
@@ -126,6 +146,7 @@ function toggleFavorite() {
 }
 
 function goToNext() {
+  if (completing.value) return;
   extraQuestionsNotice.value = null;
   store.goToNextQuestion(props.ticketId);
 }
@@ -151,8 +172,20 @@ async function completeSession(status: 'finished' | 'timed_out') {
   if (sessionId) {
     try {
       finishResult.value = await session.finishSession({ sessionId });
-    } catch {
-      submitError.value = 'Не удалось завершить сессию.';
+      // Refreshes ticket/topic/bank progress so TopicListScreen/Dashboard don't show stale data
+      // on return — covers the normal/timeout/forced-finish paths alike, all funnel through here.
+      void progressStore.loadProgress();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : '';
+      if (message === 'SESSION_ALREADY_FINISHED') {
+        // Backend already closed this session (e.g. an earlier forced-finish beat us to it) —
+        // this is a normal terminal state, not a failure. finishResult stays null; the modal below
+        // and resultCorrect/resultErrors already fall back to locally-known ticketStats without it
+        // — no fabricated SessionFinishResponse to satisfy the type.
+        void progressStore.loadProgress();
+      } else {
+        submitError.value = 'Не удалось завершить сессию.';
+      }
     }
   }
   isResultOpen.value = true;
@@ -186,9 +219,9 @@ watch(
 const ticketStats = computed(() => store.getTicketStats(props.ticketId));
 const isLast = computed(() => store.isLastQuestion(props.ticketId));
 const canAdvance = computed(
-  () => currentState.value.status !== 'unanswered' && !isLast.value,
+  () => currentState.value.status !== 'unanswered' && !isLast.value && !completing.value,
 );
-const canFinish = computed(() => store.isTicketComplete(props.ticketId));
+const canFinish = computed(() => store.isTicketComplete(props.ticketId) && !completing.value);
 const modeLabel = computed(() => {
   if (store.mode === 'theory') return 'Теория';
   if (store.mode === 'errors') return 'Ошибки';
@@ -415,6 +448,7 @@ function continueToPaywall() {
       :passed="finishResult?.passed ?? null"
       :timed-out="store.progress[ticketId]?.examStatus === 'timed_out'"
       :remaining-error-count="remainingErrorCount"
+      :forced-finish-reason="forcedFinishReason"
       @navigate="$emit('navigate', $event)"
     />
   </div>

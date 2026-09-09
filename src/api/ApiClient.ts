@@ -1,10 +1,9 @@
 import type { CatalogSnapshot } from '../domain/catalog';
 import type { Question } from '../domain/question';
+import type { ProgressSnapshot } from '../domain/progress';
 import type {
   AuthSession,
   CancelSubscriptionResponse,
-  CheckoutRequest,
-  CheckoutResult,
   CurrentUser,
   OAuthProvider,
   PremiumOffer,
@@ -12,6 +11,17 @@ import type {
   SessionStatus,
   Subscription,
 } from './types';
+
+/**
+ * camelCase boundary for POST /api/v1/billing/checkout/init (see CheckoutInitResponse, the wire
+ * DTO). Redirect-oriented on purpose — see ApiClient.checkout() below.
+ */
+export interface CheckoutInitResult {
+  paymentId: string;
+  confirmationUrl: string;
+  amountRub: number;
+  description: string;
+}
 
 /**
  * Application-level input/result shapes for the session endpoints.
@@ -112,12 +122,20 @@ export interface ApiClient {
    */
   getPremiumOffer(): Promise<PremiumOffer>;
   /**
-   * KNOWN DIVERGENCE from openapi.json: real endpoint is POST /api/v1/billing/checkout/init and
-   * returns CheckoutInitResponse (payment_id/confirmation_url/amount_rub/description), not an
-   * immediate purchase result. Kept as a frontend-only synchronous-purchase placeholder — see
-   * the doc comment on CheckoutResult in ./types. Does not accept card PAN/CVV.
+   * openapi.json POST /api/v1/billing/checkout/init. No request body. Starts a payment with the
+   * acquirer and returns a redirect target — does not activate Premium. The caller (sessionStore)
+   * does the actual browser redirect; Premium only becomes real once getSubscription()/
+   * getCurrentUser() report it after the user returns from the external payment.
    */
-  checkout(request: CheckoutRequest): Promise<CheckoutResult>;
+  checkout(): Promise<CheckoutInitResult>;
+  /**
+   * Restores this client's in-memory Bearer token after a full-page reload — e.g. returning from
+   * the external checkout redirect, where sessionStore rehydrates accessToken from its one-shot
+   * sessionStorage bridge and needs the live ApiClient instance (a fresh object post-reload) to
+   * pick it back up. Not a new persistence mechanism: the token itself still lives only in
+   * sessionStore/Pinia memory and this client's own memory, same as after exchangeOAuthCode().
+   */
+  restoreAccessToken(token: string): void;
   /**
    * openapi.json POST /api/v1/tickets/session/start.
    * theory/errors reveal `is_correct`/`explanation` on the returned questions immediately
@@ -139,4 +157,9 @@ export interface ApiClient {
   addFavorite(questionId: string): Promise<FavoriteToggleResult>;
   /** openapi.json DELETE /api/v1/questions/{question_id}/favorite. `questionId` is a Question UUID. */
   removeFavorite(questionId: string): Promise<FavoriteToggleResult>;
+  /**
+   * openapi.json GET /api/v1/progress — server-computed, survives reload. Ticket status colors the
+   * ticket grid, topic/bank progress counts only uniquely-correct questions (see ProgressSnapshot).
+   */
+  getProgress(): Promise<ProgressSnapshot>;
 }

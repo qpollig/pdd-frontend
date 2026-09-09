@@ -4,7 +4,7 @@ import {
   getPostSessionActions,
   type PostSessionActionId,
 } from '../../domain/postSessionNav';
-import type { TicketMode } from '../../types/ticket';
+import type { ForcedFinishReason, TicketMode } from '../../types/ticket';
 import AppButton from '../ui/AppButton.vue';
 
 const props = withDefaults(
@@ -18,12 +18,14 @@ const props = withDefaults(
     timedOut?: boolean;
     title?: string;
     remainingErrorCount?: number;
+    forcedFinishReason?: ForcedFinishReason;
   }>(),
   {
     passed: null,
     timedOut: false,
     title: 'Результат билета',
     remainingErrorCount: 0,
+    forcedFinishReason: null,
   },
 );
 
@@ -50,7 +52,16 @@ const actions = computed(() =>
       <h2 id="session-result-title" class="text-lg font-semibold sm:text-xl">{{ title }}</h2>
       <p class="mt-1 text-sm text-text-secondary">{{ modeLabel }}</p>
       <p v-if="timedOut" class="mt-3 text-sm text-text-secondary">Время экзамена истекло.</p>
-      <p v-if="passed === true" class="mt-3 flex items-center gap-2 text-base font-semibold text-correct">
+      <p
+        v-if="forcedFinishReason === 'extra_question_mistake'"
+        class="mt-3 flex items-center gap-2 text-base font-semibold text-incorrect"
+      >
+        <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+        </svg>
+        Ошибка в дополнительном вопросе — экзамен не сдан
+      </p>
+      <p v-else-if="passed === true" class="mt-3 flex items-center gap-2 text-base font-semibold text-correct">
         <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true">
           <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
         </svg>

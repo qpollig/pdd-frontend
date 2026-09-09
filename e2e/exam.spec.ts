@@ -92,6 +92,38 @@ test.describe('Exam ГИБДД mode', () => {
     await expect(result.getByText('Поздравляю! 0 ошибок.')).toHaveCount(0);
   });
 
+  test('a mistake on an extra question force-ends the exam immediately with its own message', async ({ page }) => {
+    await loginWithYandex(page);
+    await page.getByRole('button', { name: 'Экзамен ГИБДД' }).click();
+    await expect(page.getByRole('heading', { name: 'Экзамен ГИБДД' })).toBeVisible();
+
+    const first = questions[0];
+    await page.getByRole('button', { name: option(first, false), exact: true }).click();
+    await expect(
+      page.getByRole('navigation', { name: 'Навигация по вопросам билета' }).getByRole('button'),
+    ).toHaveCount(25);
+    await page.getByRole('button', { name: 'Следующий вопрос' }).click();
+
+    // Extras are appended after the 20 base questions, not inserted next — answer the remaining
+    // 19 base questions correctly to reach index 20, the first extra/bonus question.
+    for (let index = 1; index < 20; index += 1) {
+      const heading = await page.locator('main h2').innerText();
+      await page.getByRole('button', { name: option(sourceByText(heading), true), exact: true }).click();
+      await page.getByRole('button', { name: 'Следующий вопрос' }).click();
+    }
+
+    // Now on the first extra/bonus question — B6.1: getting it wrong ends the exam right away,
+    // it must not behave like a normal question with another chance to advance.
+    const extraHeading = await page.locator('main h2').innerText();
+    const extraSource = sourceByText(extraHeading);
+    await page.getByRole('button', { name: option(extraSource, false), exact: true }).click();
+
+    const result = page.getByRole('dialog', { name: 'Результат экзамена' });
+    await expect(result).toBeVisible();
+    await expect(result.getByText('Ошибка в дополнительном вопросе — экзамен не сдан')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Следующий вопрос' })).toHaveCount(0);
+  });
+
   test('timeout ends the exam without waiting 20 minutes', async ({ page }) => {
     await page.addInitScript(() => {
       (window as Window & { __AV_TEST_EXAM_SECONDS__?: number }).__AV_TEST_EXAM_SECONDS__ = 2;

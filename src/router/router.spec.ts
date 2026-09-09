@@ -93,5 +93,22 @@ describe('B2C routes', () => {
     await router.push('/checkout');
     expect(router.currentRoute.value.name).toBe('auth');
   });
+
+  it('restores a session from the checkout auth bridge before deciding, and does not bounce to auth', async () => {
+    // Simulates the D1 checkout-redirect reload: nothing live in this fresh Pinia instance, but a
+    // bridge entry from just before the redirect is sitting in sessionStorage.
+    const bootstrap = useSessionStore();
+    await bootstrap.loginWithProvider('yandex');
+    const token = bootstrap.accessToken!;
+    setActivePinia(createPinia());
+    sessionStorage.setItem('av_checkout_auth_bridge', token);
+
+    await router.push('/profile?checkout=success');
+
+    expect(router.currentRoute.value.name).toBe('profile');
+    const session = useSessionStore();
+    expect(session.isAuthenticated).toBe(true);
+    expect(sessionStorage.getItem('av_checkout_auth_bridge')).toBeNull();
+  });
 });
 

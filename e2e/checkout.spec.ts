@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { loginWithYandex, openHeaderLink, pushNamedRoute } from './helpers';
+import { loginWithYandex, pushNamedRoute } from './helpers';
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflowed = await page.evaluate(
@@ -26,7 +26,16 @@ test.describe('Checkout', () => {
     await expect(page.getByRole('heading', { name: 'Вход' })).toBeVisible();
   });
 
-  test('free user can complete mock checkout and see Premium on dashboard and profile', async ({
+  /**
+   * D1: checkout/init only starts a redirect-oriented payment — it never resolves to a synchronous
+   * success on this screen (see domain/checkout.ts). Paying really navigates the browser away to
+   * confirmation_url (MockApiClient models that with a same-origin URL) and back, a real full-page
+   * reload; auth survives it via the one-shot sessionStorage bridge (see sessionStore.spec.ts for
+   * the bridge's own unit coverage) rather than anything visible here. Premium confirmation itself
+   * is covered in e2e/checkout-return.spec.ts, since MockApiClient's activation timer — armed by
+   * checkout() — does not survive this same reload (documented limitation, see D1 report).
+   */
+  test('paying navigates the browser to confirmation_url, and auth survives the reload back', async ({
     page,
   }) => {
     await loginWithYandex(page);
@@ -37,21 +46,15 @@ test.describe('Checkout', () => {
     await fillPlaceholderCard(page);
     await page.getByTestId('checkout-pay-cta').click();
 
-    await expect(page.getByTestId('checkout-success')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Premium подключён' })).toBeVisible();
-    await page.getByTestId('checkout-success-cta').click();
-
-    await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
-    await expect(page.getByText('Premium', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Получить Premium-доступ' })).toHaveCount(0);
-
-    await openHeaderLink(page, 'Профиль');
+    // Real browser navigation, not SPA routing — matches the live backend's actual redirect chain.
+    await page.waitForURL(/checkout=success/);
     await expect(page.getByRole('heading', { name: 'Профиль' })).toBeVisible();
-    await expect(page.getByText('Premium', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Пробный период')).toBeVisible();
+    // No bounce to /auth despite the full reload — the checkout auth bridge restored the session.
+    await expect(page.getByRole('heading', { name: 'Вход' })).toHaveCount(0);
+    await expect(page.getByTestId('checkout-return-checking')).toBeVisible();
   });
 
-  test('failed mock payment can be retried', async ({ page }) => {
+  test('failed mock payment can be retried, and a retry also redirects the browser', async ({ page }) => {
     await loginWithYandex(page);
     await openCheckoutFromPaywall(page);
     await fillPlaceholderCard(page);
@@ -67,7 +70,7 @@ test.describe('Checkout', () => {
       (window as Window & { __AV_TEST_CHECKOUT_FAIL__?: boolean }).__AV_TEST_CHECKOUT_FAIL__ = false;
     });
     await page.getByTestId('checkout-pay-cta').click();
-    await expect(page.getByTestId('checkout-success')).toBeVisible();
+    await page.waitForURL(/checkout=success/);
   });
 
   test('already Premium user sees active state and cannot pay again', async ({ page }) => {
@@ -81,17 +84,31 @@ test.describe('Checkout', () => {
     await expect(page.getByRole('button', { name: 'На главную' })).toBeVisible();
   });
 
-  test('double submit sends one mock payment', async ({ page }) => {
+  test('double submit starts one mock payment', async ({ page }) => {
     await loginWithYandex(page);
     await openCheckoutFromPaywall(page);
     await fillPlaceholderCard(page);
-    const cta = page.getByTestId('checkout-pay-cta');
-    await Promise.all([cta.click(), cta.click()]);
-    await expect(page.getByTestId('checkout-success')).toBeVisible();
-    const calls = await page.evaluate(
-      () => (window as Window & { __AV_TEST_CHECKOUT_CALLS__?: number }).__AV_TEST_CHECKOUT_CALLS__,
-    );
-    expect(calls).toBe(1);
+    await expect(page.getByTestId('checkout-pay-cta')).toBeVisible();
+    /**
+     * Two separate page.locator().click() calls raced via Promise.all each run Playwright's own
+     * actionability protocol (hover, wait for stability, then dispatch) against a button whose
+     * submit handler starts navigating away almost immediately — the second call's wait can
+     * resolve its element handle right as that navigation tears the node out, surfacing as
+     * "element was detached from the DOM" under load (reproduced under stress: 1/15 runs). A real
+     * double-click fires both native activation clicks in one synchronous browser turn, before
+     * Vue or the navigation ever runs — dispatch it that way so the test proves the app-level
+     * double-submit guard rather than racing Playwright's own automation timing.
+     */
+    await page.evaluate(() => {
+      const button = document.querySelector<HTMLButtonElement>('[data-testid="checkout-pay-cta"]');
+      button?.click();
+      button?.click();
+    });
+    await page.waitForURL(/checkout=success/);
+    // The counter is mirrored into sessionStorage because the redirect's full-page reload wipes
+    // the __AV_TEST_CHECKOUT_CALLS__ window global before this assertion could read it.
+    const calls = await page.evaluate(() => sessionStorage.getItem('__av_test_checkout_calls__'));
+    expect(calls).toBe('1');
   });
 
   for (const width of [320, 390, 414] as const) {

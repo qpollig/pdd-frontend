@@ -8,7 +8,12 @@
 
 export type OAuthProvider = 'yandex' | 'vk';
 
-/** openapi.json components.schemas.UserOut — используется и как TokenResponse.user, и как §users/me. */
+/**
+ * openapi.json components.schemas.UserOut — используется и как TokenResponse.user, и как §users/me.
+ * `lives_regen_at`/`lives_reset_at` подтверждены живым backend (ТЗ §4.7): один и тот же UserOut
+ * отдаётся и из /auth/oauth/{provider}, и из /users/me — оба поля общие для обоих ответов,
+ * не только для "текущего" пользователя.
+ */
 export interface AuthUser {
   id: string;
   oauth_provider: OAuthProvider;
@@ -20,6 +25,8 @@ export interface AuthUser {
   is_premium: boolean;
   errors_count: number;
   favorites_count: number;
+  lives_regen_at: string | null;
+  lives_reset_at: string | null;
 }
 
 /**
@@ -34,21 +41,23 @@ export interface AuthSession {
 }
 
 /**
- * UserOut уже содержит lives_*, поэтому CurrentUser = AuthUser + `lives_regen_at`.
- * `lives_regen_at` — frontend ASSUMPTION: поле ещё не появилось в openapi.json (ТЗ §4.7 регенерация
- * жизней), backend его пока не отдаёт. Mock всегда null.
+ * Alias, не отдельная форма: живой backend отдаёт один и тот же UserOut (со всеми lives_* полями)
+ * и из TokenResponse.user, и из /users/me — раньше здесь достраивался `lives_regen_at` вручную,
+ * пока поля не было в контракте; теперь оно есть на AuthUser, дублировать нечего.
  */
-export interface CurrentUser extends AuthUser {
-  lives_regen_at: string | null;
-}
+export type CurrentUser = AuthUser;
 
 /** openapi.json components.schemas.SubscriptionStatus (GET /api/v1/subscriptions/me). */
 export type SubscriptionStatus = 'trialing' | 'active' | 'cancelled' | 'past_due';
 
 /**
  * openapi.json components.schemas.SubscriptionOut.
- * У Free-пользователя подписки нет вовсе — реальный backend отвечает 404 SUBSCRIPTION_NOT_FOUND;
- * здесь это смоделировано как `null` (нет отдельного HTTP-слоя, который бы кидал 404).
+ * Подтверждено на живом backend (аудит A→D2, 2026-09-08): GET /subscriptions/me отвечает
+ * `200 null` для Free-пользователя без подписки, а не 404 — так задокументировано и в самом live
+ * Swagger ("так в консоли браузера не мигает Failed to load resource: 404"). Устаревший локальный
+ * docs/openapi.json (снимок от 2026-09-03) ещё показывал 404 SUBSCRIPTION_NOT_FOUND для этого
+ * эндпоинта; тот код остаётся в RealApiClient.getSubscription() как безопасный запасной путь
+ * (see там же), но реальный ответ — `null` в теле 200, что и моделирует этот тип.
  * `is_premium` больше не хранится тут — источник истины AuthUser/CurrentUser.is_premium (UserOut).
  * Убраны выдуманные `next_charge_date` / `subscription_end_date` — в контракте только `paid_until`.
  */
@@ -164,25 +173,18 @@ export interface PremiumOffer {
 }
 
 /**
- * KNOWN DIVERGENCE from openapi.json — не исправлено на этом этапе, см. отчёт.
- * Реальный контракт — POST /api/v1/billing/checkout/init → CheckoutInitResponse
- * `{ payment_id, confirmation_url, amount_rub, description }`: инициирует платёж у провайдера,
- * не активирует Premium немедленно и не принимает `plan` / `payment_method_token` / `promo_code`
- * в теле. Реальная активация Premium происходит асинхронно (webhook/redirect), не в этом ответе.
- * CheckoutRequest/CheckoutResult ниже — frontend ASSUMPTION, смоделированная как синхронная покупка
- * (Phase 1 без провайдера). Задача этапа явно запрещает придумывать confirmation_url/redirect/webhook
- * flow, поэтому это поведение сохранено как есть; только вложенный `Subscription` приведён к реальной
- * форме SubscriptionOut, чтобы не плодить второй набор выдуманных дат/полей is_premium.
+ * openapi.json components.schemas.CheckoutInitResponse — POST /api/v1/billing/checkout/init.
+ * Confirmed against the live backend (2026-09-08): no request body (Bearer auth only). Initiates
+ * a payment with the acquirer and returns a redirect target — does not activate Premium
+ * synchronously. Real activation happens out of band, via POST /api/v1/billing/webhook
+ * (provider → backend), which the frontend never observes directly. See D1 report for the
+ * confirmed live redirect chain (confirmation_url → mock pay page → 303 → BILLING_RETURN_URL).
  */
-export interface CheckoutRequest {
-  plan: 'trial_1rub_299';
-  payment_method_token: string;
-  promo_code: string | null;
-}
-
-export interface CheckoutResult {
-  status: 'success';
-  subscription: Subscription;
+export interface CheckoutInitResponse {
+  payment_id: string;
+  confirmation_url: string;
+  amount_rub: number;
+  description: string;
 }
 
 /** openapi.json components.schemas.TicketCategory. */
@@ -193,6 +195,7 @@ export interface TopicOut {
   id: string;
   title: string;
   order_index: number;
+  questions_count: number;
 }
 
 /** openapi.json components.schemas.TicketOut. */
@@ -224,5 +227,38 @@ export interface FavoritesListResponse {
 export interface FavoriteToggleResponse {
   question_id: string;
   is_favorite: boolean;
+}
+
+/** openapi.json components.schemas.TicketProgressStatus — GET /api/v1/progress. */
+export type TicketProgressStatus = 'not_started' | 'in_progress' | 'passed' | 'failed';
+
+/** openapi.json components.schemas.TicketProgressOut. */
+export interface TicketProgressOut {
+  ticket_id: string;
+  status: TicketProgressStatus;
+  attempts: number;
+  best_correct: number;
+  total_questions: number;
+  last_attempt_at: string | null;
+}
+
+/** openapi.json components.schemas.TopicProgressOut. */
+export interface TopicProgressOut {
+  topic_id: string;
+  questions_total: number;
+  questions_passed: number;
+}
+
+/** openapi.json components.schemas.BankProgressOut. */
+export interface BankProgressOut {
+  questions_total: number;
+  questions_passed: number;
+}
+
+/** openapi.json components.schemas.ProgressResponse — GET /api/v1/progress. */
+export interface ProgressResponse {
+  tickets: TicketProgressOut[];
+  topics: TopicProgressOut[];
+  bank: BankProgressOut;
 }
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { loginWithYandex } from './helpers';
+import { loginWithYandex, pushNamedRoute } from './helpers';
 
 const ticketPath = join(dirname(fileURLToPath(import.meta.url)), '../src/data/ticket-1.json');
 const questions = JSON.parse(readFileSync(ticketPath, 'utf8')) as Array<{
@@ -34,7 +34,11 @@ test.describe('Favorites', () => {
   test('login with no favorites shows the empty state', async ({ page }) => {
     await loginWithYandex(page);
 
-    await page.getByRole('button', { name: 'Избранное' }).click();
+    // D2: with favorites_count === 0 the Dashboard "Избранное" card is disabled and does not
+    // navigate (see dashboard.spec.ts) — reach the empty Favorites screen directly to keep covering it.
+    const favoritesButton = page.getByRole('button', { name: 'Избранное' });
+    await expect(favoritesButton).toBeDisabled();
+    await pushNamedRoute(page, 'favorites-session', { mode: 'favorites' });
     await expect(page.getByText('Пока нет избранных вопросов')).toBeVisible();
     await expect(page.getByRole('button', { name: 'К билетам' })).toBeVisible();
   });
@@ -48,7 +52,8 @@ test.describe('Favorites', () => {
   test('leaving the empty Favorites session for a ticket does not crash the player', async ({ page }) => {
     await loginWithYandex(page);
 
-    await page.getByRole('button', { name: 'Избранное' }).click();
+    // D2: favorites_count === 0 disables the Dashboard card — reach the route directly.
+    await pushNamedRoute(page, 'favorites-session', { mode: 'favorites' });
     await expect(page.getByRole('button', { name: 'К билетам' })).toBeVisible();
 
     await page.getByRole('button', { name: 'К билетам' }).click();

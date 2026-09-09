@@ -4,8 +4,13 @@ import { mapCatalog, mapTicket, mapTopic } from './catalogMapper';
 
 describe('mapTopic (TopicOut → domain Topic)', () => {
   it('maps order_index to orderIndex without deriving it from array position', () => {
-    const dto: TopicOut = { id: 't-1', title: 'Дорожные знаки', order_index: 5 };
-    expect(mapTopic(dto)).toEqual({ id: 't-1', title: 'Дорожные знаки', orderIndex: 5 });
+    const dto: TopicOut = { id: 't-1', title: 'Дорожные знаки', order_index: 5, questions_count: 12 };
+    expect(mapTopic(dto)).toEqual({
+      id: 't-1',
+      title: 'Дорожные знаки',
+      orderIndex: 5,
+      questionsCount: 12,
+    });
   });
 });
 
@@ -27,12 +32,12 @@ describe('mapTicket (TicketOut → domain Ticket)', () => {
 describe('mapCatalog (TopicsListResponse → domain CatalogSnapshot)', () => {
   it('maps topics and tickets from the single /topics response, no questions', () => {
     const dto: TopicsListResponse = {
-      topics: [{ id: 't-1', title: 'Тема', order_index: 0 }],
+      topics: [{ id: 't-1', title: 'Тема', order_index: 0, questions_count: 3 }],
       tickets: [{ id: 'tk-1', number: 1, category: 'A_B' }],
     };
     const catalog = mapCatalog(dto);
     expect(catalog).toEqual({
-      topics: [{ id: 't-1', title: 'Тема', orderIndex: 0 }],
+      topics: [{ id: 't-1', title: 'Тема', orderIndex: 0, questionsCount: 3 }],
       tickets: [{ id: 'tk-1', number: 1, category: 'A_B' }],
     });
     expect(catalog).not.toHaveProperty('questions');

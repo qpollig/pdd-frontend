@@ -2,6 +2,7 @@ import type {
   AnswerSessionInput,
   AnswerSessionResult,
   ApiClient,
+  CheckoutInitResult,
   FavoriteToggleResult,
   FinishSessionInput,
   FinishSessionResult,
@@ -10,18 +11,21 @@ import type {
 } from './ApiClient';
 import type { CatalogSnapshot } from '../domain/catalog';
 import type { Question } from '../domain/question';
+import type { ProgressSnapshot } from '../domain/progress';
 import { mapCatalog } from '../domain/catalogMapper';
 import { mapQuestion } from '../domain/questionMapper';
+import { mapProgress } from '../domain/progressMapper';
 import type {
   AuthSession,
   AuthUser,
   CancelSubscriptionResponse,
-  CheckoutResult,
+  CheckoutInitResponse,
   CurrentUser,
   FavoritesListResponse,
   FavoriteToggleResponse,
   OAuthProvider,
   PremiumOffer,
+  ProgressResponse,
   QuestionOut,
   SessionAnswerRequest,
   SessionAnswerResponse,
@@ -121,10 +125,11 @@ export class RealApiClient implements ApiClient {
    * см. app/services/serializers.py) — приводим к абсолютному под baseUrl, иначе <img> не
    * найдёт файл, когда фронтенд и backend на разных origin (типичный случай локальной разработки).
    *
-   * ВАЖНО (см. отчёт после кода): этот эндпоинт на backend защищён Bearer-авторизацией
-   * (openapi.json: security HTTPBearer). Обычный <img src="..."> не может передать заголовок
-   * Authorization — картинки не загрузятся, пока это не будет решено на любой из сторон.
-   * Здесь только абсолютизация URL; сам вопрос авторизации эндпоинта — вне этой задачи.
+   * Подтверждено на живом backend (аудит A→D2, 2026-09-08): этот эндпоинт публичный — без
+   * `security` в live openapi.json и без Authorization в ответе 200 image/jpeg что с токеном,
+   * что без него. Устаревший локальный docs/openapi.json (снимок от 2026-09-03) ещё помечал его
+   * HTTPBearer — обычный <img src="..."> и не смог бы передать заголовок, но контракт с тех пор
+   * изменился на публичный доступ, поэтому текущая абсолютизация URL уже достаточна.
    */
   private absolutizeQuestion(dto: QuestionOut): QuestionOut {
     if (!dto.image_url || /^https?:\/\//.test(dto.image_url)) return dto;
@@ -148,10 +153,9 @@ export class RealApiClient implements ApiClient {
   }
 
   async getCurrentUser(): Promise<CurrentUser> {
-    // Backend отдаёт UserOut (AuthUser) без lives_regen_at — поля ещё нет в openapi.json
-    // (frontend ASSUMPTION, см. types.ts). Достраиваем null, как и раньше делал MockApiClient.
-    const dto = await this.request<AuthUser>('/api/v1/users/me');
-    return { ...dto, lives_regen_at: null };
+    // UserOut уже содержит lives_regen_at/lives_reset_at на живом backend — CurrentUser is AuthUser,
+    // никакой достройки не требуется (см. types.ts).
+    return this.request<AuthUser>('/api/v1/users/me');
   }
 
   async getTopics(): Promise<CatalogSnapshot> {
@@ -190,32 +194,26 @@ export class RealApiClient implements ApiClient {
   }
 
   /**
-   * KNOWN DIVERGENCE (см. ApiClient.ts/types.ts): реальный backend-эндпоинт —
-   * POST /api/v1/billing/checkout/init, который возвращает {payment_id, confirmation_url, ...}
-   * для редиректа на страницу оплаты эквайринга, а НЕ мгновенный результат покупки.
-   * Premium активируется позже, асинхронно, через POST /api/v1/billing/webhook — это отдельный
-   * вызов со стороны платёжного провайдера, а не ответ на этот запрос.
-   *
-   * Интерфейс ApiClient.checkout() требует синхронный CheckoutResult ({status, subscription}) —
-   * честно вернуть его после init() нельзя, деньги ещё не списаны и Premium ещё не активен.
-   * Здесь выполняется настоящий вызов checkout/init и браузер реально уводится на
-   * confirmation_url — но дальше этот промис не резолвится в "success", а бросает ApiError.
-   * Это осознанно: чтобы CheckoutScreen.vue не показал "Premium активирован" раньше времени.
-   * Полноценный redirect-флоу (страница возврата, опрос статуса подписки после оплаты) — это
-   * доработка CheckoutScreen.vue/checkout-стора отдельной задачей, не входит в эту.
+   * openapi.json POST /api/v1/billing/checkout/init — confirmed live (2026-09-08): no request
+   * body, Bearer auth only, returns {payment_id, confirmation_url, amount_rub, description}.
+   * Pure DTO mapping only — the actual browser redirect is sessionStore's responsibility (see
+   * D1 report), so this stays a plain API call like every other method here.
    */
-  async checkout(): Promise<CheckoutResult> {
-    const init = await this.request<{
-      payment_id: string;
-      confirmation_url: string;
-      amount_rub: number;
-      description: string;
-    }>('/api/v1/billing/checkout/init', { method: 'POST' });
+  async checkout(): Promise<CheckoutInitResult> {
+    const dto = await this.request<CheckoutInitResponse>('/api/v1/billing/checkout/init', {
+      method: 'POST',
+    });
+    return {
+      paymentId: dto.payment_id,
+      confirmationUrl: dto.confirmation_url,
+      amountRub: dto.amount_rub,
+      description: dto.description,
+    };
+  }
 
-    if (typeof window !== 'undefined') {
-      window.location.href = init.confirmation_url;
-    }
-    throw new ApiError('CHECKOUT_REDIRECT_IN_PROGRESS', 0);
+  /** See ApiClient.restoreAccessToken() — rehydrates this instance after a checkout-redirect reload. */
+  restoreAccessToken(token: string): void {
+    this.accessToken = token;
   }
 
   async startSession(input: StartSessionInput): Promise<StartSessionResult> {
@@ -293,5 +291,10 @@ export class RealApiClient implements ApiClient {
       { method: 'DELETE' },
     );
     return { questionId: dto.question_id, isFavorite: dto.is_favorite };
+  }
+
+  async getProgress(): Promise<ProgressSnapshot> {
+    const dto = await this.request<ProgressResponse>('/api/v1/progress');
+    return mapProgress(dto);
   }
 }

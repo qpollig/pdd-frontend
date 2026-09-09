@@ -1,5 +1,24 @@
 <script setup lang="ts">
-defineProps<{ current: number; max: number; isPremium: boolean }>();
+import { computed } from 'vue';
+import { useLivesRegen } from '../../composables/useLivesRegen';
+
+const props = defineProps<{
+  current: number;
+  max: number;
+  isPremium: boolean;
+  livesRegenAt: string | null;
+}>();
+
+const emit = defineEmits<{ (e: 'regen-due'): void }>();
+
+const user = computed(() => ({
+  is_premium: props.isPremium,
+  lives_current: props.current,
+  lives_max: props.max,
+  lives_regen_at: props.livesRegenAt,
+}));
+
+const { countdownLabel } = useLivesRegen(user, () => emit('regen-due'));
 </script>
 
 <template>
@@ -27,8 +46,11 @@ defineProps<{ current: number; max: number; isPremium: boolean }>();
       {{
         isPremium
           ? 'Premium: жизни не ограничивают прохождение.'
-          : 'Неверный ответ уменьшает жизни. Восстановление жизней пока недоступно.'
+          : 'Неверный ответ уменьшает жизни.'
       }}
+    </p>
+    <p v-if="countdownLabel" class="mt-1 text-xs text-text-secondary" role="status">
+      {{ countdownLabel }}
     </p>
   </section>
 </template>

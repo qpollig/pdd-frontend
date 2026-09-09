@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Question } from '../domain/question';
 import { MockApiClient } from './MockApiClient';
 
@@ -34,6 +34,14 @@ function correctAnswerIdFor(question: Question, source: Question): string {
   return answer.id;
 }
 
+/** Same positional mapping as correctAnswerIdFor(), for a wrong answer instead. */
+function wrongAnswerIdFor(question: Question, source: Question): string {
+  const index = source.answers.findIndex((item) => item.isCorrect === false);
+  const answer = question.answers[index];
+  if (!answer) throw new Error(`No matching wrong answer on ${question.id} for source ${source.id}`);
+  return answer.id;
+}
+
 describe('MockApiClient', () => {
   const api = new MockApiClient();
 
@@ -47,6 +55,7 @@ describe('MockApiClient', () => {
       id: expect.any(String),
       title: expect.any(String),
       orderIndex: 0,
+      questionsCount: expect.any(Number),
     });
   });
 
@@ -278,7 +287,7 @@ describe('MockApiClient answerSession lives', () => {
         questionId: question.id,
         answerId: correctAnswer(question).id,
       }),
-    ).rejects.toThrow('ANSWER_ALREADY_SUBMITTED');
+    ).rejects.toThrow('QUESTION_ALREADY_ANSWERED');
   });
 });
 
@@ -342,6 +351,53 @@ describe('MockApiClient error questions', () => {
     const client = new MockApiClient();
     await client.exchangeOAuthCode('yandex', 'mock-yandex-code-no-errors');
     expect((await client.startSession({ mode: 'errors' })).questions).toEqual([]);
+  });
+});
+
+describe('MockApiClient finishSession errors_count', () => {
+  /**
+   * Live backend confirmed (2026-09-09, 4 scripted finish scenarios against the live API):
+   * errors_count counts only answered-wrong questions, never unanswered ones — a finish with
+   * 15 correct + 5 unanswered + 0 wrong came back errors_count: 0, not 5.
+   */
+  it('does not count unanswered questions as errors', async () => {
+    const client = new MockApiClient();
+    const started = await startTheorySession(client);
+    const questions = started.questions;
+
+    await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: questions[0]!.id,
+      answerId: correctAnswer(questions[0]!).id,
+    });
+    // the rest of the ticket is left unanswered
+
+    const finish = await client.finishSession({ sessionId: started.sessionId });
+    expect(finish.correctCount).toBe(1);
+    expect(finish.errorsCount).toBe(0);
+    expect(finish.totalQuestions).toBe(questions.length);
+  });
+
+  it('counts wrongly answered questions but not unanswered ones when both are present', async () => {
+    const client = new MockApiClient();
+    const started = await startTheorySession(client);
+    const questions = started.questions;
+
+    await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: questions[0]!.id,
+      answerId: wrongAnswer(questions[0]!).id,
+    });
+    await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: questions[1]!.id,
+      answerId: correctAnswer(questions[1]!).id,
+    });
+    // remaining questions left unanswered
+
+    const finish = await client.finishSession({ sessionId: started.sessionId });
+    expect(finish.correctCount).toBe(1);
+    expect(finish.errorsCount).toBe(1);
   });
 });
 
@@ -475,6 +531,84 @@ describe('MockApiClient exam session', () => {
     }
   });
 
+  it('force-finishes the exam when an extra question is answered incorrectly (ТЗ §3.2 — no second chance)', async () => {
+    const client = new MockApiClient();
+    const started = await client.startSession({ mode: 'gibdd_exam' });
+    const bank = (await startTheorySession(client)).questions;
+    const first = started.questions[0]!;
+
+    const mistake = await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: first.id,
+      answerId: wrongAnswer(bank.find((item) => item.id === first.id)!).id,
+    });
+    expect(mistake.extraQuestions).toHaveLength(5);
+    expect(mistake.sessionFinishedForced).toBe(false);
+
+    const extra = mistake.extraQuestions[0]!;
+    const extraSource = bank.find((item) => item.id === extra.id.split('__extra__')[0])!;
+    const extraMistake = await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: extra.id,
+      answerId: wrongAnswerIdFor(extra, extraSource),
+    });
+
+    expect(extraMistake.sessionFinishedForced).toBe(true);
+  });
+
+  it('does not force-finish when the extra question is answered correctly', async () => {
+    const client = new MockApiClient();
+    const started = await client.startSession({ mode: 'gibdd_exam' });
+    const bank = (await startTheorySession(client)).questions;
+    const first = started.questions[0]!;
+
+    const mistake = await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: first.id,
+      answerId: wrongAnswer(bank.find((item) => item.id === first.id)!).id,
+    });
+    const extra = mistake.extraQuestions[0]!;
+    const extraSource = bank.find((item) => item.id === extra.id.split('__extra__')[0])!;
+
+    const extraResult = await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: extra.id,
+      answerId: correctAnswerIdFor(extra, extraSource),
+    });
+
+    expect(extraResult.sessionFinishedForced).toBe(false);
+  });
+
+  it('SESSION_ALREADY_FINISHED: a second finishSession call on the same session is rejected, not silently re-finished', async () => {
+    const client = new MockApiClient();
+    const started = await startTheorySession(client);
+    await client.finishSession({ sessionId: started.sessionId });
+
+    await expect(client.finishSession({ sessionId: started.sessionId })).rejects.toThrow(
+      'SESSION_ALREADY_FINISHED',
+    );
+  });
+
+  it('SESSION_ALREADY_FINISHED: answerSession after finishSession is rejected distinctly from QUESTION_ALREADY_ANSWERED', async () => {
+    const client = new MockApiClient();
+    const started = await startTheorySession(client);
+    const [first, second] = started.questions;
+    await client.answerSession({
+      sessionId: started.sessionId,
+      questionId: first!.id,
+      answerId: correctAnswer(first!).id,
+    });
+    await client.finishSession({ sessionId: started.sessionId });
+
+    await expect(
+      client.answerSession({
+        sessionId: started.sessionId,
+        questionId: second!.id,
+        answerId: correctAnswer(second!).id,
+      }),
+    ).rejects.toThrow('SESSION_ALREADY_FINISHED');
+  });
+
   it('rejects answerSession/finishSession for an unknown session id', async () => {
     const client = new MockApiClient();
     await expect(
@@ -487,60 +621,84 @@ describe('MockApiClient exam session', () => {
 });
 
 describe('MockApiClient checkout', () => {
-  it('activates trial Premium without accepting card data', async () => {
-    const client = new MockApiClient();
-    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
-    const result = await client.checkout({
-      plan: 'trial_1rub_299',
-      payment_method_token: 'mock-provider-placeholder',
-      promo_code: null,
-    });
-
-    expect(result.status).toBe('success');
-    expect(result.subscription.status).toBe('trialing');
-    expect(result.subscription.auto_renew).toBe(true);
-
-    const user = await client.getCurrentUser();
-    const subscription = await client.getSubscription();
-    expect(user.is_premium).toBe(true);
-    expect(subscription?.status).toBe('trialing');
-    expect(subscription?.auto_renew).toBe(true);
+  beforeEach(() => {
+    vi.useFakeTimers();
   });
 
-  it('fails deterministically when checkoutFails is set', async () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns a redirect-oriented result and does not accept card data or a plan/promo body', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    // checkout() takes no request body at all — mirrors the live backend (confirmed 2026-09-08).
+    const result = await client.checkout();
+
+    expect(result).toEqual({
+      paymentId: expect.any(String),
+      confirmationUrl: expect.stringContaining('checkout=success'),
+      amountRub: expect.any(Number),
+      description: expect.any(String),
+    });
+  });
+
+  it('does not activate Premium synchronously, or before the mock activation delay elapses', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.checkout();
+
+    expect((await client.getCurrentUser()).is_premium).toBe(false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect((await client.getCurrentUser()).is_premium).toBe(false);
+  });
+
+  it('activates Premium once the mock activation delay elapses, then stays active (models async webhook)', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.checkout();
+
+    await vi.advanceTimersByTimeAsync(800);
+    const activated = await client.getCurrentUser();
+    expect(activated.is_premium).toBe(true);
+
+    const subscription = await client.getSubscription();
+    expect(subscription?.status).toBe('trialing');
+    expect(subscription?.auto_renew).toBe(true);
+
+    expect((await client.getCurrentUser()).is_premium).toBe(true);
+  });
+
+  it('an unrelated getCurrentUser() call elsewhere does not activate Premium early, only elapsed time does', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.checkout();
+
+    // Simulates something unrelated (e.g. LivesCounter) polling repeatedly before the delay elapses.
+    await client.getCurrentUser();
+    await client.getCurrentUser();
+    await client.getCurrentUser();
+    expect((await client.getCurrentUser()).is_premium).toBe(false);
+  });
+
+  it('fails deterministically when checkoutFails is set, without starting activation', async () => {
     const client = new MockApiClient({ checkoutFails: true });
     await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
-    await expect(
-      client.checkout({
-        plan: 'trial_1rub_299',
-        payment_method_token: 'mock-provider-placeholder',
-        promo_code: null,
-      }),
-    ).rejects.toThrow('CHECKOUT_FAILED');
+    await expect(client.checkout()).rejects.toThrow('CHECKOUT_FAILED');
+    await vi.advanceTimersByTimeAsync(2000);
     expect((await client.getCurrentUser()).is_premium).toBe(false);
   });
 
   it('rejects checkout when Premium is already active', async () => {
     const client = new MockApiClient({ isPremium: true });
-    await expect(
-      client.checkout({
-        plan: 'trial_1rub_299',
-        payment_method_token: 'mock-provider-placeholder',
-        promo_code: null,
-      }),
-    ).rejects.toThrow('ALREADY_PREMIUM');
+    await expect(client.checkout()).rejects.toThrow('ALREADY_PREMIUM');
   });
 
   it('does not start a second payment while one is in flight', async () => {
     const client = new MockApiClient();
     await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
-    const request = {
-      plan: 'trial_1rub_299' as const,
-      payment_method_token: 'mock-provider-placeholder',
-      promo_code: null,
-    };
-    const first = client.checkout(request);
-    const second = client.checkout(request);
+    const first = client.checkout();
+    const second = client.checkout();
     const [a, b] = await Promise.all([first, second]);
     expect(a).toEqual(b);
     expect(client.checkoutCallCount).toBe(1);
@@ -687,6 +845,7 @@ describe('MockApiClient getCurrentUser', () => {
       errors_count: expect.any(Number),
       favorites_count: 0,
       lives_regen_at: null,
+      lives_reset_at: null,
     });
   });
 
@@ -710,18 +869,20 @@ describe('MockApiClient getCurrentUser', () => {
     expect((await client.getCurrentUser()).errors_count).toBe(before - 1);
   });
 
-  it('is_premium follows the mock subscription state after login/checkout', async () => {
-    const client = new MockApiClient();
-    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
-    expect((await client.getCurrentUser()).is_premium).toBe(false);
+  it('is_premium follows the mock subscription state after login/checkout activation completes', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new MockApiClient();
+      await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+      expect((await client.getCurrentUser()).is_premium).toBe(false);
 
-    await client.checkout({
-      plan: 'trial_1rub_299',
-      payment_method_token: 'mock-provider-placeholder',
-      promo_code: null,
-    });
+      await client.checkout();
+      await vi.advanceTimersByTimeAsync(800);
 
-    expect((await client.getCurrentUser()).is_premium).toBe(true);
+      expect((await client.getCurrentUser()).is_premium).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lives_current stays consistent with the value answerSession reports', async () => {
@@ -737,5 +898,105 @@ describe('MockApiClient getCurrentUser', () => {
     });
 
     expect((await client.getCurrentUser()).lives_current).toBe(result.livesCurrent);
+  });
+});
+
+describe('MockApiClient getProgress', () => {
+  it('reports not_started for every ticket and zeroed topic/bank counts before any activity', async () => {
+    const client = new MockApiClient();
+    const catalog = await client.getTopics();
+    const progress = await client.getProgress();
+
+    expect(progress.ticketStatus.size).toBe(catalog.tickets.length);
+    for (const ticket of catalog.tickets) {
+      expect(progress.ticketStatus.get(ticket.id)).toBe('not_started');
+    }
+    expect(progress.bank).toEqual({ passed: 0, total: expect.any(Number) });
+    for (const topic of catalog.topics) {
+      expect(progress.topicProgress.get(topic.id)).toEqual({ passed: 0, total: topic.questionsCount });
+    }
+  });
+
+  it('marks a ticket in_progress once started, passed once finished with no mistakes', async () => {
+    const client = new MockApiClient();
+    const ticketId = (await client.getTopics()).tickets[0]!.id;
+    const started = await client.startSession({ mode: 'theory', ticketId });
+
+    expect((await client.getProgress()).ticketStatus.get(ticketId)).toBe('in_progress');
+
+    for (const question of started.questions) {
+      await client.answerSession({
+        sessionId: started.sessionId,
+        questionId: question.id,
+        answerId: correctAnswer(question).id,
+      });
+    }
+    await client.finishSession({ sessionId: started.sessionId });
+
+    expect((await client.getProgress()).ticketStatus.get(ticketId)).toBe('passed');
+  });
+
+  it('marks a ticket failed after a mistake, then passed again after a clean retry', async () => {
+    const client = new MockApiClient();
+    const ticketId = (await client.getTopics()).tickets[0]!.id;
+
+    const firstAttempt = await client.startSession({ mode: 'theory', ticketId });
+    const [firstQuestion, ...restFirst] = firstAttempt.questions;
+    await client.answerSession({
+      sessionId: firstAttempt.sessionId,
+      questionId: firstQuestion!.id,
+      answerId: wrongAnswer(firstQuestion!).id,
+    });
+    for (const question of restFirst) {
+      await client.answerSession({
+        sessionId: firstAttempt.sessionId,
+        questionId: question.id,
+        answerId: correctAnswer(question).id,
+      });
+    }
+    await client.finishSession({ sessionId: firstAttempt.sessionId });
+    expect((await client.getProgress()).ticketStatus.get(ticketId)).toBe('failed');
+
+    const secondAttempt = await client.startSession({ mode: 'theory', ticketId });
+    for (const question of secondAttempt.questions) {
+      await client.answerSession({
+        sessionId: secondAttempt.sessionId,
+        questionId: question.id,
+        answerId: correctAnswer(question).id,
+      });
+    }
+    await client.finishSession({ sessionId: secondAttempt.sessionId });
+
+    expect((await client.getProgress()).ticketStatus.get(ticketId)).toBe('passed');
+  });
+
+  it('counts a question toward topic/bank progress only once, even across separate ticket sessions', async () => {
+    const client = new MockApiClient();
+    const catalog = await client.getTopics();
+
+    const attempt = await startTheorySession(client);
+    for (const question of attempt.questions) {
+      await client.answerSession({
+        sessionId: attempt.sessionId,
+        questionId: question.id,
+        answerId: correctAnswer(question).id,
+      });
+    }
+    await client.finishSession({ sessionId: attempt.sessionId });
+    const afterFirst = await client.getProgress();
+    expect(afterFirst.bank.passed).toBe(afterFirst.bank.total);
+
+    const secondTicketId = catalog.tickets[1]!.id;
+    const attempt2 = await client.startSession({ mode: 'theory', ticketId: secondTicketId });
+    for (const question of attempt2.questions) {
+      await client.answerSession({
+        sessionId: attempt2.sessionId,
+        questionId: question.id,
+        answerId: correctAnswer(question).id,
+      });
+    }
+    await client.finishSession({ sessionId: attempt2.sessionId });
+
+    expect((await client.getProgress()).bank).toEqual(afterFirst.bank);
   });
 });

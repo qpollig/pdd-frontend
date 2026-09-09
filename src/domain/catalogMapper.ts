@@ -7,6 +7,7 @@ export function mapTopic(dto: TopicOut): Topic {
     id: dto.id,
     title: dto.title,
     orderIndex: dto.order_index,
+    questionsCount: dto.questions_count,
   };
 }
 

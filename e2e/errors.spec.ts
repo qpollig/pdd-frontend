@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { MOCK_ERROR_QUESTION_IDS } from '../src/api/errorQuestionsFixture';
-import { loginWithYandex } from './helpers';
+import { loginWithYandex, pushNamedRoute } from './helpers';
 
 const ticketPath = join(dirname(fileURLToPath(import.meta.url)), '../src/data/ticket-1.json');
 const questions = JSON.parse(readFileSync(ticketPath, 'utf8')) as Array<{
@@ -103,7 +103,11 @@ test.describe('Errors mode', () => {
     await page.getByRole('button', { name: 'Войти через Яндекс' }).click();
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Ошибки' }).click();
+    // D2: with errors_count === 0 the Dashboard "Ошибки" card is disabled and does not navigate
+    // (see dashboard.spec.ts) — reach the empty Errors screen directly to keep covering it.
+    const errorsButton = page.getByRole('button', { name: 'Ошибки' });
+    await expect(errorsButton).toBeDisabled();
+    await pushNamedRoute(page, 'errors-session', { mode: 'errors' });
     await expect(page.getByText('Ошибок для проработки пока нет')).toBeVisible();
     await expect(page.getByRole('button', { name: 'К теории' })).toBeVisible();
   });
