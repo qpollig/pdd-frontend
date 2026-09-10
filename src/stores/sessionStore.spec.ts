@@ -533,3 +533,74 @@ describe('sessionStore cancelAutoRenew', () => {
     expect(session.cancelStatus).toBe('success');
   });
 });
+
+describe('sessionStore login methods (identities)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.restoreAllMocks();
+  });
+
+  it('loadIdentities pulls the current list from the API', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadIdentities();
+    expect(session.identities.map((i) => i.type)).toEqual(['yandex']);
+    expect(session.identitiesError).toBeNull();
+  });
+
+  it('linkPassword adds a password identity and clears any prior error', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    const ok = await session.linkPassword('me@example.com', 'secret-password-1');
+    expect(ok).toBe(true);
+    expect(session.identities.map((i) => i.type).sort()).toEqual(['password', 'yandex']);
+  });
+
+  it('linkPassword surfaces EMAIL_ALREADY_REGISTERED as a specific message, not a crash', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadIdentities();
+    const ok = await session.linkPassword('taken@example.com', 'secret-password-1');
+    expect(ok).toBe(false);
+    expect(session.identitiesError).toMatch(/другим аккаунтом/);
+    expect(session.identities.map((i) => i.type)).toEqual(['yandex']); // список не тронут
+  });
+
+  it('unlinkIdentity refuses the last identity with a specific message', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadIdentities();
+    const ok = await session.unlinkIdentity('yandex');
+    expect(ok).toBe(false);
+    expect(session.identitiesError).toMatch(/единственный способ/);
+    expect(session.identities.map((i) => i.type)).toEqual(['yandex']);
+  });
+
+  it('unlinkIdentity removes one of two', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.linkPassword('me@example.com', 'secret-password-1');
+    const ok = await session.unlinkIdentity('yandex');
+    expect(ok).toBe(true);
+    expect(session.identities.map((i) => i.type)).toEqual(['password']);
+  });
+
+  it('logout wipes identities state', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadIdentities();
+    session.logout();
+    expect(session.identities).toEqual([]);
+    expect(session.identitiesError).toBeNull();
+  });
+
+  it('linkWithProvider degrades gracefully against MockApiClient (no OAuth link backend)', async () => {
+    const session = useSessionStore();
+    await session.loginWithProvider('yandex');
+    await session.loadIdentities();
+    await session.linkWithProvider('vk');
+    // MockApiClient не реализует OAuth-привязку — понятное сообщение, без исключения
+    expect(session.identitiesError).toBeTruthy();
+    expect(session.identities.map((i) => i.type)).toEqual(['yandex']);
+  });
+});

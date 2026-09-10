@@ -1,4 +1,5 @@
 import type { CatalogSnapshot } from '../domain/catalog';
+import type { Identity, IdentityType } from '../domain/identity';
 import type { Question } from '../domain/question';
 import type { ProgressSnapshot } from '../domain/progress';
 import type {
@@ -165,4 +166,15 @@ export interface ApiClient {
    * ticket grid, topic/bank progress counts only uniquely-correct questions (see ProgressSnapshot).
    */
   getProgress(): Promise<ProgressSnapshot>;
+  /**
+   * Связывание способов входа (Фаза 1). Все три требуют Bearer (request() уже проставляет).
+   * Каждая ручка возвращает актуальный список identities после операции.
+   *
+   * Привязки OAuth здесь НЕТ намеренно: она идёт полным редиректом браузера на провайдера и
+   * обратно (как логин), а не обычным request/response — см. sessionStore.linkWithProvider /
+   * beginOAuthLink / completeOAuthCallback(purpose:'link') и RealApiClient.linkOAuthIdentity.
+   */
+  getIdentities(): Promise<Identity[]>;
+  linkPassword(email: string, password: string): Promise<Identity[]>;
+  unlinkIdentity(type: IdentityType): Promise<Identity[]>;
 }

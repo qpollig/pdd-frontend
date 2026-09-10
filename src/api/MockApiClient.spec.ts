@@ -137,6 +137,74 @@ describe('MockApiClient', () => {
   });
 });
 
+describe('MockApiClient identities (link/unlink)', () => {
+  it('starts with exactly one identity — the provider used to log in', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    const identities = await client.getIdentities();
+    expect(identities).toEqual([
+      { type: 'yandex', identifier: expect.any(String), createdAt: expect.any(String) },
+    ]);
+  });
+
+  it('re-login resets the identity list to the new provider', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.exchangeOAuthCode('vk', 'mock-vk-code');
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['vk']);
+  });
+
+  it('linkPassword adds a password identity and returns the updated list', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    const after = await client.linkPassword('Me@Example.com', 'secret-password-1');
+    expect(after.map((i) => i.type).sort()).toEqual(['password', 'yandex']);
+    expect(after.find((i) => i.type === 'password')?.identifier).toBe('me@example.com'); // нормализован
+    expect(await client.getIdentities()).toEqual(after); // состояние сохранилось
+  });
+
+  it('linkPassword twice → PASSWORD_ALREADY_SET', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.linkPassword('a@example.com', 'secret-password-1');
+    await expect(client.linkPassword('b@example.com', 'secret-password-2')).rejects.toThrow(
+      'PASSWORD_ALREADY_SET',
+    );
+  });
+
+  it('linkPassword with a taken email → EMAIL_ALREADY_REGISTERED', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await expect(client.linkPassword('taken@example.com', 'secret-password-1')).rejects.toThrow(
+      'EMAIL_ALREADY_REGISTERED',
+    );
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['yandex']); // не изменилось
+  });
+
+  it('unlinkIdentity removes one of two and returns the remaining list', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.linkPassword('me@example.com', 'secret-password-1');
+    const after = await client.unlinkIdentity('yandex');
+    expect(after.map((i) => i.type)).toEqual(['password']);
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['password']);
+  });
+
+  it('unlinkIdentity on the last remaining identity → CANNOT_UNLINK_LAST_IDENTITY', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await expect(client.unlinkIdentity('yandex')).rejects.toThrow('CANNOT_UNLINK_LAST_IDENTITY');
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['yandex']); // осталась
+  });
+
+  it('unlinkIdentity for a type the user does not have → IDENTITY_NOT_FOUND', async () => {
+    const client = new MockApiClient();
+    await client.exchangeOAuthCode('yandex', 'mock-yandex-code');
+    await client.linkPassword('me@example.com', 'secret-password-1');
+    await expect(client.unlinkIdentity('vk')).rejects.toThrow('IDENTITY_NOT_FOUND');
+  });
+});
+
 const QUESTION_1 = 'ffd0c95b28a89bd4faff45a8874c4fb3';
 
 describe('MockApiClient startSession (theory)', () => {

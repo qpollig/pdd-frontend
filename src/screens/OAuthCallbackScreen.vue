@@ -24,13 +24,24 @@ onMounted(async () => {
     return;
   }
 
-  const ok = await session.completeOAuthCallback(provider, {
+  // Тот же callback обрабатывает и обычный вход, и привязку к уже залогиненному аккаунту —
+  // completeOAuthCallback различает их по purpose в one-shot state-бридже.
+  const result = await session.completeOAuthCallback(provider, {
     code: queryString(route.query.code),
     state: queryString(route.query.state),
     providerError: queryString(route.query.error),
   });
 
-  await router.replace(ok ? { name: 'dashboard' } : { name: 'auth' });
+  if (result.purpose === 'link') {
+    // Исход привязки уезжает в ЛК через query — ProfileScreen покажет баннер и вычистит параметр.
+    await router.replace({
+      name: 'profile',
+      query: { link: result.ok ? 'ok' : (result.errorCode ?? 'error') },
+    });
+    return;
+  }
+
+  await router.replace(result.ok ? { name: 'dashboard' } : { name: 'auth' });
 });
 </script>
 

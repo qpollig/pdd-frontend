@@ -47,6 +47,23 @@ export interface AuthSession {
  */
 export type CurrentUser = AuthUser;
 
+/**
+ * openapi.json IdentityOut — один привязанный способ входа. Ответ GET /api/v1/auth/identities и
+ * тело ответа link/unlink-ручек. `identifier` = email для password, oauth_id для yandex/vk
+ * (внутренний, пользователю не показываем — см. src/domain/identity.ts).
+ */
+export interface IdentityOut {
+  type: 'password' | OAuthProvider;
+  identifier: string;
+  created_at: string;
+}
+
+/** POST /api/v1/auth/identities/password. */
+export interface LinkPasswordRequest {
+  email: string;
+  password: string;
+}
+
 /** openapi.json components.schemas.SubscriptionStatus (GET /api/v1/subscriptions/me). */
 export type SubscriptionStatus = 'trialing' | 'active' | 'cancelled' | 'past_due';
 

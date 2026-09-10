@@ -86,13 +86,13 @@ describe('sessionStore real OAuth redirect flow (RealApiClient)', () => {
       },
     });
 
-    const ok = await session.completeOAuthCallback('yandex', {
+    const result = await session.completeOAuthCallback('yandex', {
       code: 'real-provider-code',
       state: bridge.state,
       providerError: null,
     });
 
-    expect(ok).toBe(true);
+    expect(result).toEqual({ purpose: 'login', ok: true, errorCode: null });
     expect(session.isAuthenticated).toBe(true);
     expect(session.accessToken).toBe('real-access-token');
     expect(exchangeSpy).toHaveBeenCalledWith('yandex', 'real-provider-code', expect.stringContaining('/auth/callback/yandex'));
@@ -104,13 +104,13 @@ describe('sessionStore real OAuth redirect flow (RealApiClient)', () => {
     session.loginWithProvider('yandex');
     const exchangeSpy = vi.spyOn(clientModule.apiClient, 'exchangeOAuthCode');
 
-    const ok = await session.completeOAuthCallback('yandex', {
+    const result = await session.completeOAuthCallback('yandex', {
       code: 'real-provider-code',
       state: 'wrong-state',
       providerError: null,
     });
 
-    expect(ok).toBe(false);
+    expect(result).toEqual({ purpose: 'login', ok: false, errorCode: null });
     expect(session.isAuthenticated).toBe(false);
     expect(session.error).toBeTruthy();
     expect(exchangeSpy).not.toHaveBeenCalled();
@@ -120,13 +120,13 @@ describe('sessionStore real OAuth redirect flow (RealApiClient)', () => {
   it('fails closed when the provider itself reports an error, without a bridge or code', async () => {
     const { session } = await freshSession();
 
-    const ok = await session.completeOAuthCallback('yandex', {
+    const result = await session.completeOAuthCallback('yandex', {
       code: null,
       state: null,
       providerError: 'access_denied',
     });
 
-    expect(ok).toBe(false);
+    expect(result).toEqual({ purpose: 'login', ok: false, errorCode: null });
     expect(session.isAuthenticated).toBe(false);
     expect(session.error).toBeTruthy();
   });
@@ -137,13 +137,13 @@ describe('sessionStore real OAuth redirect flow (RealApiClient)', () => {
     const bridge = JSON.parse(sessionStorage.getItem('av_oauth_state_bridge') as string) as { state: string };
     vi.spyOn(clientModule.apiClient, 'exchangeOAuthCode').mockRejectedValueOnce(new Error('OAUTH_EXCHANGE_FAILED'));
 
-    const ok = await session.completeOAuthCallback('yandex', {
+    const result = await session.completeOAuthCallback('yandex', {
       code: 'already-used-code',
       state: bridge.state,
       providerError: null,
     });
 
-    expect(ok).toBe(false);
+    expect(result).toEqual({ purpose: 'login', ok: false, errorCode: null });
     expect(session.isAuthenticated).toBe(false);
     expect(session.error).toBeTruthy();
   });

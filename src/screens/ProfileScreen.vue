@@ -5,6 +5,7 @@ import AppButton from '../components/ui/AppButton.vue';
 import ErrorState from '../components/ui/ErrorState.vue';
 import AppSpinner from '../components/ui/AppSpinner.vue';
 import CancelSubscriptionModal from '../components/profile/CancelSubscriptionModal.vue';
+import LoginMethodsSection from '../components/profile/LoginMethodsSection.vue';
 import LivesCounter from '../components/dashboard/LivesCounter.vue';
 import { useSessionStore } from '../stores/sessionStore';
 import { useCheckoutReturn } from '../composables/useCheckoutReturn';
@@ -209,10 +210,15 @@ function logout() {
           Premium активен до {{ paidUntilText }}.
         </p>
       </section>
-      <div
+      <LoginMethodsSection
         v-motion
         :initial="fadeUp().initial"
         :enter="fadeUp(staggerDelay(3)).enter"
+      />
+      <div
+        v-motion
+        :initial="fadeUp().initial"
+        :enter="fadeUp(staggerDelay(4)).enter"
         class="flex flex-col gap-3 sm:flex-row"
       >
         <AppButton v-if="!session.isPremium" class="w-full sm:w-auto" @click="router.push('/paywall')">

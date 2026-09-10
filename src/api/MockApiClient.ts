@@ -6,6 +6,7 @@ import {
 } from '../domain/examRules';
 import { mapCatalog } from '../domain/catalogMapper';
 import type { CatalogSnapshot } from '../domain/catalog';
+import type { Identity, IdentityType } from '../domain/identity';
 import type { Question } from '../domain/question';
 import { mapQuestion } from '../domain/questionMapper';
 import { mapProgress } from '../domain/progressMapper';
@@ -51,6 +52,13 @@ const TICKET_COUNT = 40;
 /** All mock tickets belong to the combined A/B track — the fixture bank has no C_D questions. */
 const TICKET_CATEGORY: TicketCategory = 'A_B';
 const MOCK_SUBSCRIPTION_ID = '00000000-0000-4000-8000-000000000300';
+/** Фиксированный created_at для mock-identity — детерминированность в тестах. */
+const MOCK_IDENTITY_CREATED_AT = '2026-01-01T00:00:00.000Z';
+/**
+ * Email, который «уже занят другим пользователем» — linkPassword с ним отдаёт
+ * EMAIL_ALREADY_REGISTERED, как это сделал бы backend с глобальной уникальностью email.
+ */
+export const MOCK_LINK_TAKEN_EMAIL = 'taken@example.com';
 /** ТЗ §3.5 / §4.5: 299 ₽/мес — то же значение, что MOCK_PREMIUM_OFFER.monthly_price_rub. */
 const MOCK_SUBSCRIPTION_PRICE_RUB = 299;
 /** Separator between a question id and its answer's order_index in the synthesized mock answer id. */
@@ -297,6 +305,12 @@ export class MockApiClient implements ApiClient {
   private correctQuestionIds = new Set<string>();
   /** GET /api/v1/progress: per-ticket attempts/best result, keyed by ticket id. */
   private ticketProgress = new Map<string, TicketProgressRecord>();
+  /**
+   * Способы входа текущего mock-пользователя. Стартует с одной identity — тем провайдером,
+   * которым залогинились (см. exchangeOAuthCode). linkPassword/unlinkIdentity двигают этот
+   * список так же, как это делал бы backend, включая ошибки.
+   */
+  private identities: Identity[] = [];
 
   constructor(fixtures: MockApiClientFixtures = {}) {
     this.livesCurrent = fixtures.livesCurrent ?? MOCK_INITIAL_LIVES;
@@ -358,6 +372,10 @@ export class MockApiClient implements ApiClient {
     this.correctQuestionIds = new Set();
     this.ticketProgress = new Map();
     this.checkoutInitiatedAt = null;
+    // Свежий вход = ровно одна identity: тот провайдер, которым вошли.
+    this.identities = [
+      { type: provider, identifier: `mock-${provider}-oauth-id`, createdAt: MOCK_IDENTITY_CREATED_AT },
+    ];
     const user: AuthUser = {
       ...MOCK_AUTH_USERS[provider],
       is_premium: isPremiumLogin || isTrialLogin,
@@ -416,6 +434,38 @@ export class MockApiClient implements ApiClient {
   /** MockApiClient never validates Bearer tokens, so there is nothing to restore. */
   restoreAccessToken(): void {
     /* no-op */
+  }
+
+  async getIdentities(): Promise<Identity[]> {
+    return this.identities.map((identity) => ({ ...identity }));
+  }
+
+  async linkPassword(email: string, password: string): Promise<Identity[]> {
+    void password; // фикстуре пароль не нужен — только переходы состояния
+    const normalized = email.trim().toLowerCase();
+    if (this.identities.some((identity) => identity.type === 'password')) {
+      throw new Error('PASSWORD_ALREADY_SET');
+    }
+    if (normalized === MOCK_LINK_TAKEN_EMAIL) {
+      throw new Error('EMAIL_ALREADY_REGISTERED');
+    }
+    this.identities = [
+      ...this.identities,
+      { type: 'password', identifier: normalized, createdAt: new Date().toISOString() },
+    ];
+    return this.getIdentities();
+  }
+
+  async unlinkIdentity(type: IdentityType): Promise<Identity[]> {
+    const remaining = this.identities.filter((identity) => identity.type !== type);
+    if (remaining.length === this.identities.length) {
+      throw new Error('IDENTITY_NOT_FOUND');
+    }
+    if (remaining.length === 0) {
+      throw new Error('CANNOT_UNLINK_LAST_IDENTITY');
+    }
+    this.identities = remaining;
+    return this.getIdentities();
   }
 
   async checkout(): Promise<CheckoutInitResult> {

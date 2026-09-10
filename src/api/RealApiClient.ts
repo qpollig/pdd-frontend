@@ -10,9 +10,11 @@ import type {
   StartSessionResult,
 } from './ApiClient';
 import type { CatalogSnapshot } from '../domain/catalog';
+import type { Identity, IdentityType } from '../domain/identity';
 import type { Question } from '../domain/question';
 import type { ProgressSnapshot } from '../domain/progress';
 import { mapCatalog } from '../domain/catalogMapper';
+import { mapIdentities } from '../domain/identityMapper';
 import { mapQuestion } from '../domain/questionMapper';
 import { mapProgress } from '../domain/progressMapper';
 import type {
@@ -23,6 +25,7 @@ import type {
   CurrentUser,
   FavoritesListResponse,
   FavoriteToggleResponse,
+  IdentityOut,
   OAuthProvider,
   PremiumOffer,
   ProgressResponse,
@@ -298,5 +301,42 @@ export class RealApiClient implements ApiClient {
   async getProgress(): Promise<ProgressSnapshot> {
     const dto = await this.request<ProgressResponse>('/api/v1/progress');
     return mapProgress(dto);
+  }
+
+  async getIdentities(): Promise<Identity[]> {
+    return mapIdentities(await this.request<IdentityOut[]>('/api/v1/auth/identities'));
+  }
+
+  async linkPassword(email: string, password: string): Promise<Identity[]> {
+    return mapIdentities(
+      await this.request<IdentityOut[]>('/api/v1/auth/identities/password', {
+        method: 'POST',
+        body: { email, password },
+      }),
+    );
+  }
+
+  async unlinkIdentity(type: IdentityType): Promise<Identity[]> {
+    return mapIdentities(
+      await this.request<IdentityOut[]>(`/api/v1/auth/identities/${type}`, { method: 'DELETE' }),
+    );
+  }
+
+  /**
+   * НЕ в интерфейсе ApiClient (см. там же): OAuth-привязка — это редирект-флоу, эта ручка —
+   * только шаг обмена code после возврата от провайдера (или, в mock-режиме, прямой вызов
+   * фиксированным кодом). Вызывается из sessionStore, не из компонентов.
+   */
+  async linkOAuthIdentity(
+    provider: OAuthProvider,
+    code: string,
+    redirectUri?: string,
+  ): Promise<Identity[]> {
+    return mapIdentities(
+      await this.request<IdentityOut[]>(`/api/v1/auth/identities/oauth/${provider}`, {
+        method: 'POST',
+        body: redirectUri ? { code, redirect_uri: redirectUri } : { code },
+      }),
+    );
   }
 }
