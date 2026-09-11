@@ -25,11 +25,15 @@ import type {
   CurrentUser,
   FavoritesListResponse,
   FavoriteToggleResponse,
+  ForgotPasswordRequest,
   IdentityOut,
+  LoginRequest,
   OAuthProvider,
   PremiumOffer,
   ProgressResponse,
   QuestionOut,
+  RegisterRequest,
+  ResetPasswordRequest,
   SessionAnswerRequest,
   SessionAnswerResponse,
   SessionFinishRequest,
@@ -155,6 +159,41 @@ export class RealApiClient implements ApiClient {
     });
     this.accessToken = session.access_token;
     return session;
+  }
+
+  async registerWithPassword(email: string, password: string, name: string): Promise<AuthSession> {
+    const body: RegisterRequest = { email, password, name };
+    const session = await this.request<AuthSession>('/api/v1/auth/register', {
+      method: 'POST',
+      body,
+      auth: false,
+    });
+    this.accessToken = session.access_token;
+    return session;
+  }
+
+  async loginWithPassword(email: string, password: string): Promise<AuthSession> {
+    const body: LoginRequest = { email, password };
+    const session = await this.request<AuthSession>('/api/v1/auth/login', {
+      method: 'POST',
+      body,
+      auth: false,
+    });
+    this.accessToken = session.access_token;
+    return session;
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    const body: ForgotPasswordRequest = { email };
+    // Backend всегда отвечает 200 с одинаковым нейтральным телом — тело здесь намеренно
+    // отбрасывается (см. ApiClient.requestPasswordReset()), сама отправка не может «зафейлиться»
+    // прикладной ошибкой (кроме RATE_LIMITED/сетевых), проброс которых через request() достаточен.
+    await this.request<unknown>('/api/v1/auth/password/forgot', { method: 'POST', body, auth: false });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const body: ResetPasswordRequest = { token, new_password: newPassword };
+    await this.request<unknown>('/api/v1/auth/password/reset', { method: 'POST', body, auth: false });
   }
 
   async getCurrentUser(): Promise<CurrentUser> {

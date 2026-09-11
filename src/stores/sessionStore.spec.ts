@@ -2,6 +2,11 @@ import { createPinia, setActivePinia } from 'pinia';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiClient } from '../api/client';
 import { MOCK_INITIAL_LIVES } from '../api/livesFixture';
+import {
+  MOCK_PASSWORD_TEST_EMAIL,
+  MOCK_PASSWORD_TEST_PASSWORD,
+  MOCK_VALID_RESET_TOKEN,
+} from '../api/MockApiClient';
 import { useSessionStore } from './sessionStore';
 
 describe('sessionStore loadCurrentUser / loadProfile', () => {
@@ -531,6 +536,128 @@ describe('sessionStore cancelAutoRenew', () => {
     release();
     await first;
     expect(session.cancelStatus).toBe('success');
+  });
+});
+
+describe('sessionStore email+password auth (register/login/forgot/reset)', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.restoreAllMocks();
+  });
+
+  it('registerWithPassword logs the user in immediately, reusing applySession like OAuth', async () => {
+    const session = useSessionStore();
+    const ok = await session.registerWithPassword('new-student@example.com', 'a-strong-pass', 'Ученик');
+
+    expect(ok).toBe(true);
+    expect(session.isAuthenticated).toBe(true);
+    expect(session.user?.email).toBe('new-student@example.com');
+    expect(session.authError).toBeNull();
+    expect(session.authLoading).toBe(false);
+  });
+
+  it('registerWithPassword surfaces EMAIL_ALREADY_REGISTERED as a specific message, not a crash', async () => {
+    const session = useSessionStore();
+    const ok = await session.registerWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'a-strong-pass', 'Ученик');
+
+    expect(ok).toBe(false);
+    expect(session.isAuthenticated).toBe(false);
+    expect(session.authErrorCode).toBe('EMAIL_ALREADY_REGISTERED');
+    expect(session.authError).toBeTruthy();
+  });
+
+  it('loginWithPassword logs in with the documented test credentials', async () => {
+    const session = useSessionStore();
+    const ok = await session.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, MOCK_PASSWORD_TEST_PASSWORD);
+
+    expect(ok).toBe(true);
+    expect(session.isAuthenticated).toBe(true);
+    expect(session.user?.email).toBe(MOCK_PASSWORD_TEST_EMAIL);
+  });
+
+  it('loginWithPassword with a wrong password shows one undifferentiated message, not user-existence info', async () => {
+    const session = useSessionStore();
+    const ok = await session.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'wrong-password');
+
+    expect(ok).toBe(false);
+    expect(session.isAuthenticated).toBe(false);
+    expect(session.authErrorCode).toBe('INVALID_CREDENTIALS');
+    expect(session.authError).toBe('Неверный email или пароль.');
+  });
+
+  it('loginWithPassword with an unknown email shows the exact same message as a wrong password', async () => {
+    const session = useSessionStore();
+    await session.loginWithPassword('nobody@example.com', MOCK_PASSWORD_TEST_PASSWORD);
+    const unknownEmailMessage = session.authError;
+
+    setActivePinia(createPinia());
+    const session2 = useSessionStore();
+    await session2.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'wrong-password');
+
+    expect(unknownEmailMessage).toBe(session2.authError);
+  });
+
+  it('requestPasswordReset always reaches the neutral "sent" status, regardless of the email', async () => {
+    const session = useSessionStore();
+    await session.requestPasswordReset('nobody@example.com');
+    expect(session.forgotStatus).toBe('sent');
+
+    setActivePinia(createPinia());
+    const session2 = useSessionStore();
+    await session2.requestPasswordReset(MOCK_PASSWORD_TEST_EMAIL);
+    expect(session2.forgotStatus).toBe('sent');
+  });
+
+  it('requestPasswordReset surfaces RATE_LIMITED as a distinct status, not the generic error', async () => {
+    const session = useSessionStore();
+    vi.spyOn(apiClient, 'requestPasswordReset').mockRejectedValueOnce(new Error('RATE_LIMITED'));
+
+    await session.requestPasswordReset('someone@example.com');
+
+    expect(session.forgotStatus).toBe('rate-limited');
+  });
+
+  it('resetForgotStatus resets forgotStatus back to idle', async () => {
+    const session = useSessionStore();
+    await session.requestPasswordReset('someone@example.com');
+    expect(session.forgotStatus).toBe('sent');
+
+    session.resetForgotStatus();
+
+    expect(session.forgotStatus).toBe('idle');
+  });
+
+  it('resetPasswordWithToken succeeds with the fixed mock-valid token and does NOT auto-login', async () => {
+    const session = useSessionStore();
+    const ok = await session.resetPasswordWithToken(MOCK_VALID_RESET_TOKEN, 'brand-new-pass');
+
+    expect(ok).toBe(true);
+    expect(session.resetStatus).toBe('success');
+    expect(session.isAuthenticated).toBe(false);
+    expect(session.accessToken).toBeNull();
+  });
+
+  it('resetPasswordWithToken with any other token → INVALID_OR_EXPIRED_TOKEN, specific message', async () => {
+    const session = useSessionStore();
+    const ok = await session.resetPasswordWithToken('garbage-token', 'brand-new-pass');
+
+    expect(ok).toBe(false);
+    expect(session.resetStatus).toBe('error');
+    expect(session.resetError).toBeTruthy();
+  });
+
+  it('logout clears all email+password auth state', async () => {
+    const session = useSessionStore();
+    await session.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'wrong-password');
+    await session.requestPasswordReset('someone@example.com');
+
+    session.logout();
+
+    expect(session.authError).toBeNull();
+    expect(session.authErrorCode).toBeNull();
+    expect(session.forgotStatus).toBe('idle');
+    expect(session.resetStatus).toBe('idle');
+    expect(session.resetError).toBeNull();
   });
 });
 

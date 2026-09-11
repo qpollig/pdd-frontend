@@ -71,3 +71,29 @@ VITE_VK_OAUTH_CLIENT_ID=...
 в сборку через `build.args` в `docker-compose.yml`, которые интерполируются из `.env` рядом с
 compose-файлом (Vite «запекает» их в бандл на этапе `npm run build`).
 
+### Email+пароль (регистрация/вход/сброс пароля)
+
+`MockApiClient` эмулирует второй способ входа — email+пароль — без сети, теми же фикстурами, что
+и OAuth. Тестовые учётные данные для e2e/локальной разработки (константы `MOCK_PASSWORD_TEST_EMAIL`
+/ `MOCK_PASSWORD_TEST_PASSWORD` в `src/api/MockApiClient.ts`):
+
+```
+email:    student@example.com
+password: student-pass-2026
+```
+
+- **Вход** (`/auth`, форма email+пароль) принимает только эту пару — любая другая комбинация
+  (включая незарегистрированный email) отвечает одним и тем же `INVALID_CREDENTIALS`, без различия
+  «неверный пароль» / «нет такого пользователя» (тот же принцип, что у настоящего backend).
+- **Регистрация** (`/register`) создаёт нового mock-пользователя с указанным email — кроме самого
+  `student@example.com`, который считается уже занятым (`EMAIL_ALREADY_REGISTERED`).
+- **Забыли пароль** (`/forgot-password`) всегда «успешна» — как и настоящий backend, mock не
+  раскрывает, существует ли email.
+- **Сброс пароля** (`/reset-password?token=...`) принимает только фиксированный токен
+  `mock-valid-reset-token` (константа `MOCK_VALID_RESET_TOKEN`); любой другой токен отвечает
+  `INVALID_OR_EXPIRED_TOKEN`.
+
+Как и у OAuth-фикстур, `MockApiClient` моделирует одного «текущего» пользователя, а не полноценную
+базу — `registerWithPassword`/`loginWithPassword` не ведут реестр всех когда-либо созданных
+аккаунтов, только различают «занятый»/«тестовый» email от прочих.
+

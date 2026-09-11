@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Question } from '../domain/question';
-import { MockApiClient } from './MockApiClient';
+import {
+  MockApiClient,
+  MOCK_PASSWORD_TEST_EMAIL,
+  MOCK_PASSWORD_TEST_PASSWORD,
+  MOCK_VALID_RESET_TOKEN,
+} from './MockApiClient';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -134,6 +139,80 @@ describe('MockApiClient', () => {
 
   it('rejects an invalid mock OAuth code', async () => {
     await expect(api.exchangeOAuthCode('yandex', 'invalid')).rejects.toThrow('AUTH_FAILED');
+  });
+});
+
+describe('MockApiClient email+password auth (register/login/forgot/reset)', () => {
+  it('registerWithPassword auto-logs-in a new mock user with a single password identity', async () => {
+    const client = new MockApiClient();
+    const session = await client.registerWithPassword('new-student@example.com', 'a-strong-pass', 'Новый ученик');
+
+    expect(session.access_token).toBeTruthy();
+    expect(session.token_type).toBe('bearer');
+    expect(session.user).toEqual(
+      expect.objectContaining({
+        oauth_provider: null,
+        name: 'Новый ученик',
+        email: 'new-student@example.com',
+        is_premium: false,
+      }),
+    );
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['password']);
+  });
+
+  it('registerWithPassword normalizes email case', async () => {
+    const client = new MockApiClient();
+    const session = await client.registerWithPassword('New-Student@Example.com', 'a-strong-pass', 'X');
+    expect(session.user.email).toBe('new-student@example.com');
+  });
+
+  it('registerWithPassword with the already-taken test email → EMAIL_ALREADY_REGISTERED', async () => {
+    const client = new MockApiClient();
+    await expect(
+      client.registerWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'a-strong-pass', 'X'),
+    ).rejects.toThrow('EMAIL_ALREADY_REGISTERED');
+  });
+
+  it('loginWithPassword accepts the documented test credentials', async () => {
+    const client = new MockApiClient();
+    const session = await client.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, MOCK_PASSWORD_TEST_PASSWORD);
+
+    expect(session.access_token).toBeTruthy();
+    expect(session.user.email).toBe(MOCK_PASSWORD_TEST_EMAIL);
+    expect(session.user.oauth_provider).toBeNull();
+    expect((await client.getIdentities()).map((i) => i.type)).toEqual(['password']);
+  });
+
+  it('loginWithPassword with a wrong password → INVALID_CREDENTIALS (same code as unknown email)', async () => {
+    const client = new MockApiClient();
+    await expect(client.loginWithPassword(MOCK_PASSWORD_TEST_EMAIL, 'wrong-password')).rejects.toThrow(
+      'INVALID_CREDENTIALS',
+    );
+  });
+
+  it('loginWithPassword with an unknown email → INVALID_CREDENTIALS (same code, not a distinct one)', async () => {
+    const client = new MockApiClient();
+    await expect(
+      client.loginWithPassword('nobody@example.com', MOCK_PASSWORD_TEST_PASSWORD),
+    ).rejects.toThrow('INVALID_CREDENTIALS');
+  });
+
+  it('requestPasswordReset always resolves, regardless of the email', async () => {
+    const client = new MockApiClient();
+    await expect(client.requestPasswordReset('nobody@example.com')).resolves.toBeUndefined();
+    await expect(client.requestPasswordReset(MOCK_PASSWORD_TEST_EMAIL)).resolves.toBeUndefined();
+  });
+
+  it('resetPassword accepts only the fixed mock-valid token', async () => {
+    const client = new MockApiClient();
+    await expect(client.resetPassword(MOCK_VALID_RESET_TOKEN, 'new-strong-pass')).resolves.toBeUndefined();
+  });
+
+  it('resetPassword with any other token → INVALID_OR_EXPIRED_TOKEN', async () => {
+    const client = new MockApiClient();
+    await expect(client.resetPassword('garbage-token', 'new-strong-pass')).rejects.toThrow(
+      'INVALID_OR_EXPIRED_TOKEN',
+    );
   });
 });
 

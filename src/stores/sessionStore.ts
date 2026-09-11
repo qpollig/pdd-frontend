@@ -9,6 +9,7 @@ import type {
 } from '../api/ApiClient';
 import { apiClient, useMockLogin } from '../api/client';
 import { RealApiClient } from '../api/RealApiClient';
+import { authErrorMessage } from '../domain/auth';
 import type { CheckoutStatus } from '../domain/checkout';
 import type { Identity, IdentityType } from '../domain/identity';
 import { identityErrorMessage } from '../domain/identity';
@@ -96,6 +97,30 @@ export const useSessionStore = defineStore('session', () => {
   /** Уже переведённое в текст сообщение об ошибке связывания (не код). */
   const identitiesError = ref<string | null>(null);
   const linkStatus = ref<'idle' | 'processing' | 'redirecting'>('idle');
+
+  /**
+   * Email+password auth (регистрация/вход, AuthScreen+RegisterScreen). Отдельно от `loading`/
+   * `error` (OAuth-логин) — форма email+пароля живёт на том же экране, что и OAuth-кнопки, и не
+   * должна гасить/показывать чужой спиннер/ошибку при параллельном взаимодействии с обоими блоками.
+   * `authErrorCode` — код backend'а (для UI-веток типа "Войти" при EMAIL_ALREADY_REGISTERED),
+   * `authError` — уже переведённый текст (см. src/domain/auth.ts::authErrorMessage).
+   */
+  const authLoading = ref(false);
+  const authError = ref<string | null>(null);
+  const authErrorCode = ref<string | null>(null);
+
+  /**
+   * ForgotPasswordScreen. Backend всегда отвечает 200 одинаковым телом (защита от перебора email) —
+   * поэтому 'sent' означает и «email существует, письмо отправлено», и «email не существует» —
+   * экран обязан показывать один и тот же нейтральный текст в обоих случаях. 'rate-limited'
+   * выделен отдельно по ТЗ (собственное сообщение, не общая ошибка). 'error' — транспортный сбой
+   * (сеть/5xx), не связан с существованием email, отдельный текст ("не удалось отправить").
+   */
+  const forgotStatus = ref<'idle' | 'processing' | 'sent' | 'rate-limited' | 'error'>('idle');
+
+  /** ResetPasswordScreen. `resetError` — уже переведённый текст (INVALID_OR_EXPIRED_TOKEN и т.п.). */
+  const resetStatus = ref<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const resetError = ref<string | null>(null);
 
   /** ТЗ §2.2: accessToken только в памяти Pinia, не cookie / localStorage. */
   const accessToken = ref<string | null>(null);
@@ -264,6 +289,102 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  // ── Email+password auth (регистрация/вход/сброс пароля) ───────────────────────────────────────
+  function clearAuthError() {
+    authError.value = null;
+    authErrorCode.value = null;
+  }
+
+  /**
+   * POST /api/v1/auth/register. Backend сразу авторизует (register = auto-login) — переиспользует
+   * applySession(), как и OAuth-логин. Возвращает false при ошибке (EMAIL_ALREADY_REGISTERED и
+   * т.п.) — вызывающий экран решает, что показать/куда вести, читая authErrorCode.
+   */
+  async function registerWithPassword(email: string, password: string, name: string): Promise<boolean> {
+    authLoading.value = true;
+    authError.value = null;
+    authErrorCode.value = null;
+    try {
+      const session = await apiClient.registerWithPassword(email, password, name);
+      applySession(session);
+      return true;
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : '';
+      authErrorCode.value = code || null;
+      authError.value = authErrorMessage(code) ?? 'Не удалось зарегистрироваться. Попробуйте ещё раз.';
+      return false;
+    } finally {
+      authLoading.value = false;
+    }
+  }
+
+  /** POST /api/v1/auth/login. Тот же AuthSession/applySession(), что и у OAuth/register. */
+  async function loginWithPassword(email: string, password: string): Promise<boolean> {
+    authLoading.value = true;
+    authError.value = null;
+    authErrorCode.value = null;
+    try {
+      const session = await apiClient.loginWithPassword(email, password);
+      applySession(session);
+      return true;
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : '';
+      authErrorCode.value = code || null;
+      authError.value = authErrorMessage(code) ?? 'Не удалось войти. Попробуйте ещё раз.';
+      return false;
+    } finally {
+      authLoading.value = false;
+    }
+  }
+
+  /** Сброс forgotStatus в idle — вызывается экраном при заходе, чтобы не показать стейл-статус. */
+  function resetForgotStatus() {
+    forgotStatus.value = 'idle';
+  }
+
+  /**
+   * POST /api/v1/auth/password/forgot. Backend ВСЕГДА отвечает 200 одинаковым телом — 'sent'
+   * ставится и когда email существует, и когда нет (см. forgotStatus). RATE_LIMITED — единственный
+   * код, который экран обязан отличать (ТЗ §3). Любая другая ошибка (сеть/5xx) — 'error', текст
+   * которого не намекает на существование email, только на то, что отправка не удалась.
+   */
+  async function requestPasswordReset(email: string): Promise<void> {
+    forgotStatus.value = 'processing';
+    try {
+      await apiClient.requestPasswordReset(email);
+      forgotStatus.value = 'sent';
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : '';
+      forgotStatus.value = code === 'RATE_LIMITED' ? 'rate-limited' : 'error';
+    }
+  }
+
+  /** Сброс resetStatus/resetError в idle — вызывается ResetPasswordScreen при заходе. */
+  function resetPasswordStatusReset() {
+    resetStatus.value = 'idle';
+    resetError.value = null;
+  }
+
+  /**
+   * POST /api/v1/auth/password/reset. `token` передаётся как есть, фронт его не валидирует —
+   * см. ApiClient.resetPassword(). Намеренно НЕ вызывает applySession()/не логинит пользователя —
+   * ResetPasswordScreen после success ведёт на экран входа (см. отчёт по задаче про обоснование).
+   */
+  async function resetPasswordWithToken(token: string, newPassword: string): Promise<boolean> {
+    resetStatus.value = 'processing';
+    resetError.value = null;
+    try {
+      await apiClient.resetPassword(token, newPassword);
+      resetStatus.value = 'success';
+      return true;
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : '';
+      resetStatus.value = 'error';
+      resetError.value = authErrorMessage(code) ?? 'Не удалось сменить пароль. Попробуйте ещё раз.';
+      return false;
+    }
+  }
+
   // ── «Способы входа» ────────────────────────────────────────────────────────────────────────
   function clearIdentitiesError() {
     identitiesError.value = null;
@@ -385,6 +506,12 @@ export const useSessionStore = defineStore('session', () => {
     identitiesError.value = null;
     identitiesLoading.value = false;
     linkStatus.value = 'idle';
+    authLoading.value = false;
+    authError.value = null;
+    authErrorCode.value = null;
+    forgotStatus.value = 'idle';
+    resetStatus.value = 'idle';
+    resetError.value = null;
   }
 
   /** GET /api/v1/users/me — sole user-state source (Dashboard, header, etc.). */
@@ -600,8 +727,21 @@ export const useSessionStore = defineStore('session', () => {
     identitiesLoading,
     identitiesError,
     linkStatus,
+    authLoading,
+    authError,
+    authErrorCode,
+    forgotStatus,
+    resetStatus,
+    resetError,
     loginWithProvider,
     completeOAuthCallback,
+    clearAuthError,
+    registerWithPassword,
+    loginWithPassword,
+    resetForgotStatus,
+    requestPasswordReset,
+    resetPasswordStatusReset,
+    resetPasswordWithToken,
     loadIdentities,
     linkPassword,
     unlinkIdentity,

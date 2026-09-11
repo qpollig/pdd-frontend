@@ -22,6 +22,24 @@ export const router = createRouter({
       meta: { title: 'Вход' },
     },
     {
+      path: '/register',
+      name: 'register',
+      component: () => import('../screens/RegisterScreen.vue'),
+      meta: { title: 'Регистрация' },
+    },
+    {
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: () => import('../screens/ForgotPasswordScreen.vue'),
+      meta: { title: 'Восстановление пароля' },
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('../screens/ResetPasswordScreen.vue'),
+      meta: { title: 'Новый пароль' },
+    },
+    {
       path: '/tickets/errors',
       name: 'errors-session',
       component: () => import('../screens/TicketSessionScreen.vue'),
@@ -103,13 +121,26 @@ export const router = createRouter({
   },
 });
 
+/**
+ * Экраны входа/регистрации/сброса пароля — доступны только неавторизованным (тот же принцип, что
+ * уже действовал для 'auth'/'oauth-callback'). reset-password тоже сюда: залогиненному пользователю
+ * менять пароль через "забыли пароль" незачем — для этого есть привязка/смена в ЛК.
+ */
+const GUEST_ONLY_ROUTE_NAMES = new Set([
+  'auth',
+  'oauth-callback',
+  'register',
+  'forgot-password',
+  'reset-password',
+]);
+
 router.beforeEach(async (to) => {
   const session = useSessionStore();
   // D1: restores accessToken from the one-shot checkout-redirect bridge (see sessionStore) before
   // any auth decision below — a no-op for every ordinary navigation, since it only does work when
   // there is no live session yet AND a bridge entry is actually present.
   await session.hydrateFromCheckoutBridge();
-  if (to.name === 'auth' || to.name === 'oauth-callback') {
+  if (typeof to.name === 'string' && GUEST_ONLY_ROUTE_NAMES.has(to.name)) {
     if (session.isAuthenticated) {
       return { name: 'dashboard' };
     }

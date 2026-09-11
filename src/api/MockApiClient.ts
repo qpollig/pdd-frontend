@@ -59,6 +59,17 @@ const MOCK_IDENTITY_CREATED_AT = '2026-01-01T00:00:00.000Z';
  * EMAIL_ALREADY_REGISTERED, как это сделал бы backend с глобальной уникальностью email.
  */
 export const MOCK_LINK_TAKEN_EMAIL = 'taken@example.com';
+/**
+ * Предопределённая тестовая учётная запись email+пароль — единственная, которую принимает
+ * loginWithPassword() (см. там же про ограничение мока: это НЕ полноценная база пользователей,
+ * а один активный «текущий» пользователь, как и у остального файла — exchangeOAuthCode тоже не
+ * ведёт реестр всех когда-либо вошедших). Тот же email считается уже занятым для
+ * registerWithPassword(). Задокументирована в README ("Тестовые учётные данные для e2e").
+ */
+export const MOCK_PASSWORD_TEST_EMAIL = 'student@example.com';
+export const MOCK_PASSWORD_TEST_PASSWORD = 'student-pass-2026';
+/** Единственный токен сброса пароля, который принимает resetPassword() — любой другой отвергается. */
+export const MOCK_VALID_RESET_TOKEN = 'mock-valid-reset-token';
 /** ТЗ §3.5 / §4.5: 299 ₽/мес — то же значение, что MOCK_PREMIUM_OFFER.monthly_price_rub. */
 const MOCK_SUBSCRIPTION_PRICE_RUB = 299;
 /** Separator between a question id and its answer's order_index in the synthesized mock answer id. */
@@ -140,6 +151,21 @@ const MOCK_AUTH_USERS: Record<OAuthProvider, AuthUser> = {
     lives_reset_at: null,
   },
 };
+
+/**
+ * Общие поля для пользователей, вошедших по email+паролю — oauth_provider: null (в отличие от
+ * MOCK_AUTH_USERS), т.к. у них нет привязанного OAuth. id/name/email достраиваются на месте
+ * (login использует фиксированный id — см. MOCK_PASSWORD_TEST_EMAIL, register — свой).
+ */
+const MOCK_PASSWORD_USER_BASE = {
+  oauth_provider: null,
+  avatar_url: null,
+  is_premium: false,
+  lives_current: MOCK_INITIAL_LIVES,
+  lives_max: MOCK_LIVES_MAX,
+  lives_regen_at: null,
+  lives_reset_at: null,
+} satisfies Partial<AuthUser>;
 
 export type MockApiClientFixtures = {
   isPremium?: boolean;
@@ -359,6 +385,20 @@ export class MockApiClient implements ApiClient {
     };
   }
 
+  /**
+   * Общий сброс игрового состояния на новый "вход" — OAuth, password-login или регистрацию.
+   * Используется exchangeOAuthCode/loginWithPassword/registerWithPassword, чтобы не дублировать
+   * один и тот же список присваиваний три раза.
+   */
+  private resetGameplayStateForFreshLogin(isEmptyErrors: boolean): void {
+    this.autoRenewCancelled = false;
+    this.livesCurrent = MOCK_INITIAL_LIVES;
+    this.errorQuestionIds = isEmptyErrors ? [] : [...this.initialErrorQuestionIds];
+    this.correctQuestionIds = new Set();
+    this.ticketProgress = new Map();
+    this.checkoutInitiatedAt = null;
+  }
+
   async exchangeOAuthCode(provider: OAuthProvider, code: string): Promise<AuthSession> {
     const isPremiumLogin = code === `mock-${provider}-code-premium`;
     const isTrialLogin = code === `mock-${provider}-code-trial`;
@@ -366,12 +406,7 @@ export class MockApiClient implements ApiClient {
     if (code !== `mock-${provider}-code` && !isEmptyErrors && !isPremiumLogin && !isTrialLogin) {
       throw new Error('AUTH_FAILED');
     }
-    this.autoRenewCancelled = false;
-    this.livesCurrent = MOCK_INITIAL_LIVES;
-    this.errorQuestionIds = isEmptyErrors ? [] : [...this.initialErrorQuestionIds];
-    this.correctQuestionIds = new Set();
-    this.ticketProgress = new Map();
-    this.checkoutInitiatedAt = null;
+    this.resetGameplayStateForFreshLogin(isEmptyErrors);
     // Свежий вход = ровно одна identity: тот провайдер, которым вошли.
     this.identities = [
       { type: provider, identifier: `mock-${provider}-oauth-id`, createdAt: MOCK_IDENTITY_CREATED_AT },
@@ -398,6 +433,71 @@ export class MockApiClient implements ApiClient {
       token_type: 'bearer',
       user,
     };
+  }
+
+  /**
+   * openapi.json POST /api/v1/auth/register. Ограничение мока (см. MOCK_PASSWORD_TEST_EMAIL):
+   * "уже занят" — только один фиксированный email, а не полноценный реестр всех
+   * когда-либо зарегистрированных адресов — MockApiClient моделирует одного текущего
+   * пользователя, как и остальной файл (exchangeOAuthCode устроен так же).
+   */
+  async registerWithPassword(email: string, password: string, name: string): Promise<AuthSession> {
+    void password; // фикстуре пароль не нужен — только код ошибки/успех, как у linkPassword
+    const normalized = email.trim().toLowerCase();
+    if (normalized === MOCK_PASSWORD_TEST_EMAIL) {
+      throw new Error('EMAIL_ALREADY_REGISTERED');
+    }
+    this.resetGameplayStateForFreshLogin(false);
+    this.identities = [
+      { type: 'password', identifier: normalized, createdAt: new Date().toISOString() },
+    ];
+    const user: AuthUser = {
+      ...MOCK_PASSWORD_USER_BASE,
+      id: '00000000-0000-4000-8000-000000000104',
+      name,
+      email: normalized,
+      errors_count: this.errorQuestionIds.length,
+      favorites_count: this.favoriteQuestionIds.size,
+    };
+    this.lastAuthUser = user;
+    return { access_token: 'mock-access-token-password-register', token_type: 'bearer', user };
+  }
+
+  /** openapi.json POST /api/v1/auth/login. Принимает только MOCK_PASSWORD_TEST_EMAIL/PASSWORD. */
+  async loginWithPassword(email: string, password: string): Promise<AuthSession> {
+    const normalized = email.trim().toLowerCase();
+    if (normalized !== MOCK_PASSWORD_TEST_EMAIL || password !== MOCK_PASSWORD_TEST_PASSWORD) {
+      // Backend намеренно не различает "нет такого email" и "неверный пароль" одним кодом —
+      // мок делает то же самое.
+      throw new Error('INVALID_CREDENTIALS');
+    }
+    this.resetGameplayStateForFreshLogin(false);
+    this.identities = [
+      { type: 'password', identifier: normalized, createdAt: MOCK_IDENTITY_CREATED_AT },
+    ];
+    const user: AuthUser = {
+      ...MOCK_PASSWORD_USER_BASE,
+      id: '00000000-0000-4000-8000-000000000103',
+      name: 'Тестовый ученик',
+      email: normalized,
+      errors_count: this.errorQuestionIds.length,
+      favorites_count: this.favoriteQuestionIds.size,
+    };
+    this.lastAuthUser = user;
+    return { access_token: 'mock-access-token-password-login', token_type: 'bearer', user };
+  }
+
+  /** openapi.json POST /api/v1/auth/password/forgot. Backend всегда 200 — мок всегда resolve. */
+  async requestPasswordReset(email: string): Promise<void> {
+    void email;
+  }
+
+  /** openapi.json POST /api/v1/auth/password/reset. Единственный «валидный» токен — см. константу. */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    void newPassword;
+    if (token !== MOCK_VALID_RESET_TOKEN) {
+      throw new Error('INVALID_OR_EXPIRED_TOKEN');
+    }
   }
 
   /** See checkoutInitiatedAt doc comment. Checked on every getCurrentUser()/getSubscription() call. */

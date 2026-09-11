@@ -98,6 +98,27 @@ export interface ApiClient {
    */
   exchangeOAuthCode(provider: OAuthProvider, code: string, redirectUri?: string): Promise<AuthSession>;
   /**
+   * POST /api/v1/auth/register — email+password регистрация. Backend сразу авторизует (register
+   * = auto-login, Фаза 1 не блокирует на верификации email) и возвращает тот же AuthSession, что
+   * и exchangeOAuthCode/loginWithPassword — sessionStore.applySession() переиспользуется без
+   * дублирования логики применения сессии.
+   */
+  registerWithPassword(email: string, password: string, name: string): Promise<AuthSession>;
+  /** POST /api/v1/auth/login — email+password вход. Тот же AuthSession, что и у OAuth/register. */
+  loginWithPassword(email: string, password: string): Promise<AuthSession>;
+  /**
+   * POST /api/v1/auth/password/forgot. Backend ВСЕГДА отвечает 200 с одинаковым нейтральным
+   * телом независимо от того, существует ли email (защита от перебора) — поэтому здесь
+   * Promise<void>, а не тело ответа: экран рисует свой нейтральный текст сам, не читая ответ
+   * backend (см. ForgotPasswordScreen.vue).
+   */
+  requestPasswordReset(email: string): Promise<void>;
+  /**
+   * POST /api/v1/auth/password/reset. `token` передаётся как есть — фронт не пытается его
+   * расшифровать/провалидировать, это ответственность backend (400 INVALID_OR_EXPIRED_TOKEN).
+   */
+  resetPassword(token: string, newPassword: string): Promise<void>;
+  /**
    * openapi.json GET /api/v1/users/me — UserOut. Same domain shape TokenResponse.user maps to
    * (see sessionStore's userFromAuthSession); this is the only user-state source, there is no
    * separate Dashboard endpoint/DTO.

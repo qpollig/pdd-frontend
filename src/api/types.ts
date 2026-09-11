@@ -16,7 +16,10 @@ export type OAuthProvider = 'yandex' | 'vk';
  */
 export interface AuthUser {
   id: string;
-  oauth_provider: OAuthProvider;
+  // Подтверждено на живом backend (app/schemas/user.py): null для пользователей, вошедших по
+  // паролю без привязанного Yandex/VK (см. эту задачу — email+password auth). Раньше здесь было
+  // ошибочно объявлено non-null — работало только потому, что password-логина в UI ещё не было.
+  oauth_provider: OAuthProvider | null;
   name: string | null;
   avatar_url: string | null;
   email: string | null;
@@ -38,6 +41,37 @@ export interface AuthSession {
   access_token: string;
   token_type: string;
   user: AuthUser;
+}
+
+/**
+ * POST /api/v1/auth/register — email+password регистрация. Backend сразу авторизует
+ * (register = auto-login, Фаза 1 намеренно не блокирует на верификации email).
+ */
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+}
+
+/** POST /api/v1/auth/login. */
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+/**
+ * POST /api/v1/auth/password/forgot. Backend ВСЕГДА отвечает 200 с одинаковым нейтральным телом
+ * независимо от того, зарегистрирован ли email (защита от перебора) — фронт это тело не читает,
+ * см. ApiClient.requestPasswordReset().
+ */
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+/** POST /api/v1/auth/password/reset. */
+export interface ResetPasswordRequest {
+  token: string;
+  new_password: string;
 }
 
 /**
