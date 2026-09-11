@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { loginWithYandex, pushNamedRoute } from './helpers';
+import { loginWithYandex, openHeaderLink, pushNamedRoute } from './helpers';
 
 const ticketPath = join(dirname(fileURLToPath(import.meta.url)), '../src/data/ticket-1.json');
 const questions = JSON.parse(readFileSync(ticketPath, 'utf8')) as Array<{
@@ -17,7 +17,7 @@ test.describe('Favorites', () => {
   test('toggling a question favorite calls the Favorites API and updates the button', async ({ page }) => {
     await loginWithYandex(page);
 
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
     await expect(page.getByRole('heading', { name: /Билет 1/ })).toBeVisible();
 
@@ -67,7 +67,7 @@ test.describe('Favorites', () => {
   test('a favorited question can be opened, answered and finished from Favorites', async ({ page }) => {
     await loginWithYandex(page);
 
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
     await expect(page.getByRole('heading', { name: firstQuestion.question })).toBeVisible();
     await page.getByRole('button', { name: 'Добавить в избранное' }).click();

@@ -6,7 +6,7 @@ test.describe('Mock authentication', () => {
     page,
   }) => {
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await expect(page.getByRole('heading', { name: 'Билеты' })).toBeVisible();
     await openHeaderLink(page, 'Главная');
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();

@@ -319,34 +319,51 @@ function continueToPaywall() {
           />
         </div>
       </div>
+      <div class="mx-auto w-full max-w-[1200px] px-4 pb-3 sm:px-6 lg:px-8 2xl:hidden">
+        <QuestionNav
+          :questions="questions"
+          :question-states="questionStates"
+          :current-index="currentIndex"
+          :conceal-results="concealResults"
+          @select="goToQuestion"
+        />
+      </div>
     </header>
 
-    <div class="mx-auto w-full max-w-[1200px] px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-12 lg:pt-8">
-      <QuestionNav
-        :questions="questions"
-        :question-states="questionStates"
-        :current-index="currentIndex"
-        :conceal-results="concealResults"
-        @select="goToQuestion"
-      />
+    <div
+      class="mx-auto w-full max-w-[1200px] px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-12 lg:pt-8 2xl:flex 2xl:items-start 2xl:gap-8"
+    >
+      <aside class="hidden shrink-0 2xl:sticky 2xl:top-28 2xl:block">
+        <QuestionNav
+          :questions="questions"
+          :question-states="questionStates"
+          :current-index="currentIndex"
+          :conceal-results="concealResults"
+          variant="sidebar"
+          @select="goToQuestion"
+        />
+      </aside>
 
-      <p
-        v-if="extraQuestionsNotice"
-        class="mt-3 rounded-card border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-text-primary"
-        role="status"
-      >
-        {{ extraQuestionsNotice }}
-      </p>
+      <div class="min-w-0 2xl:flex-1">
+        <main class="mt-4 sm:mt-6 lg:mx-auto lg:max-w-[640px]">
+        <p
+          v-if="extraQuestionsNotice"
+          class="rounded-card border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-text-primary"
+          role="status"
+        >
+          {{ extraQuestionsNotice }}
+        </p>
 
-      <main class="mt-4 sm:mt-6 lg:grid lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-start lg:gap-8">
-        <div class="lg:sticky lg:top-6">
-          <MediaBlock :image="currentQuestion.imageUrl" />
-          <div v-if="mode !== 'exam'" class="mt-3 hidden lg:block">
-            <MediaUnlockCta @open-paywall="openPaywall" />
-          </div>
+        <div class="flex flex-col gap-5" :class="extraQuestionsNotice ? 'mt-3' : ''">
+        <div class="order-1">
+          <MediaBlock :image="currentQuestion.imageUrl" :video="currentQuestion.videoUrl" />
         </div>
 
-        <div class="mt-5 lg:mt-0">
+        <div v-if="mode !== 'exam'" class="order-3 lg:order-2">
+          <MediaUnlockCta @open-paywall="openPaywall" />
+        </div>
+
+        <div class="order-2 lg:order-3">
           <section
             v-if="livesLocked"
             class="mb-5 rounded-card border border-incorrect/30 bg-incorrect/5 p-4"
@@ -429,12 +446,10 @@ function continueToPaywall() {
               </AppButton>
             </div>
           </div>
-
-          <div v-if="mode !== 'exam'" class="mt-5 lg:hidden">
-            <MediaUnlockCta @open-paywall="openPaywall" />
-          </div>
         </div>
-      </main>
+        </div>
+        </main>
+      </div>
     </div>
 
     <PaywallModal :open="isPaywallOpen" @close="closePaywall" @continue="continueToPaywall" />

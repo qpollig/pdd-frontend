@@ -1,19 +1,23 @@
 import { expect, test } from '@playwright/test';
-import { loginWithYandex } from './helpers';
+import { loginWithYandex, openHeaderLink } from './helpers';
 
 /**
- * B4/B5: MediaBlock must never look like a broken image, must tell the two empty/error states
+ * B4/B5/B10: MediaBlock must never look like a broken image, must tell the two empty/error states
  * apart, must never crop the question photo, and an image problem must stay local — the question
- * and its answers stay fully usable, with no global error/toast.
+ * and its answers stay fully usable, with no global error/toast. Same contract for video: it only
+ * renders when there is no image (image wins when a question has both), and a video load failure
+ * gets its own copy without blocking the question.
  *
  * Fixture question 0 (src/data/ticket-1.json) uses the `./images/no_image.jpg` sentinel (no real
- * photo); question 1 has a real-looking but non-existent path — both cases occur naturally in the
- * mock bank, no fabricated fixture needed.
+ * photo); question 1 has a real-looking but non-existent image path plus MockApiClient's mock
+ * video (see MOCK_VIDEO_QUESTION_IDS), to also exercise image-over-video priority; question 5 has
+ * no image but does have the mock video — both cases occur naturally in the mock bank, no
+ * additional fabricated fixture needed.
  */
 test.describe('Ticket media', () => {
   test('a question with no image shows the empty-state copy, not a broken image', async ({ page }) => {
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
 
     await expect(page.getByRole('heading', { name: /В каком случае водитель совершит/ })).toBeVisible();
@@ -33,7 +37,7 @@ test.describe('Ticket media', () => {
     await page.route('**/tmp/images/A_B/**', (route) => route.abort('failed'));
 
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
     await page.getByRole('button', { name: 'Вопрос 2,', exact: false }).click();
 
@@ -51,7 +55,7 @@ test.describe('Ticket media', () => {
     await page.route('**/tmp/images/A_B/**', (route) => route.fulfill({ path: 'public/favicon.png' }));
 
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
     await page.getByRole('button', { name: 'Вопрос 2,', exact: false }).click();
 
@@ -64,5 +68,49 @@ test.describe('Ticket media', () => {
     expect(classAttr).toContain('object-contain');
     expect(classAttr).not.toContain('object-cover');
     expect(classAttr).not.toContain('aspect-video');
+  });
+
+  test('a question with no image but a video shows a native, non-autoplaying video player', async ({ page }) => {
+    await loginWithYandex(page);
+    await openHeaderLink(page, 'Билеты');
+    await page.getByRole('link', { name: /^Билет 1 / }).click();
+    await page.getByRole('button', { name: 'Вопрос 6,', exact: false }).click();
+
+    await expect(page.getByRole('heading', { name: /Что означает мигание зелёного сигнала/ })).toBeVisible();
+    await expect(page.getByText('Изображение к вопросу отсутствует')).toHaveCount(0);
+    await expect(page.locator('img[fetchpriority="high"]')).toHaveCount(0);
+
+    const video = page.locator('video');
+    await expect(video).toBeVisible();
+    await expect(video).toHaveAttribute('controls', '');
+    await expect(video).not.toHaveAttribute('autoplay', '');
+    await expect(video).toHaveJSProperty('paused', true);
+  });
+
+  test('a question with both an image and a video renders only the image (image priority)', async ({ page }) => {
+    await page.route('**/tmp/images/A_B/**', (route) => route.fulfill({ path: 'public/favicon.png' }));
+
+    await loginWithYandex(page);
+    await openHeaderLink(page, 'Билеты');
+    await page.getByRole('link', { name: /^Билет 1 / }).click();
+    await page.getByRole('button', { name: 'Вопрос 2,', exact: false }).click();
+
+    await expect(page.locator('img[fetchpriority="high"]')).toBeVisible();
+    await expect(page.locator('video')).toHaveCount(0);
+  });
+
+  test('a failed video load shows the video load-error copy and keeps the question answerable', async ({ page }) => {
+    await page.route('**Cars_Passing_by_at_Night.webm', (route) => route.abort('failed'));
+
+    await loginWithYandex(page);
+    await openHeaderLink(page, 'Билеты');
+    await page.getByRole('link', { name: /^Билет 1 / }).click();
+    await page.getByRole('button', { name: 'Вопрос 6,', exact: false }).click();
+
+    await expect(page.getByText('Не удалось загрузить видео')).toBeVisible();
+    await expect(page.locator('video')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Разрешает движение', exact: false }).click();
+    await expect(page.getByRole('status', { name: 'Результат ответа' })).toHaveText('Верно');
   });
 });

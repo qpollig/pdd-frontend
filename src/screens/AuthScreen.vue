@@ -50,8 +50,6 @@ async function login(provider: OAuthProvider) {
           </p>
         </div>
 
-        <AppSpinner v-if="session.loading" label="Вход" class="mt-6" />
-
         <ErrorState
           v-if="session.error && !session.loading"
           class="mt-6"
@@ -59,7 +57,12 @@ async function login(provider: OAuthProvider) {
           :description="session.error"
         />
 
-        <div class="mt-8 flex flex-col gap-3">
+        <div class="relative mt-8">
+          <div v-if="session.loading" class="absolute inset-0 z-10 flex items-center justify-center">
+            <AppSpinner label="Вход" />
+          </div>
+
+          <div class="flex flex-col gap-3" :class="{ invisible: session.loading }">
           <button
             type="button"
             :disabled="session.loading"
@@ -89,6 +92,7 @@ async function login(provider: OAuthProvider) {
             </span>
             <span class="flex-1 text-sm font-semibold">Войти через VK</span>
           </button>
+          </div>
         </div>
       </div>
     </div>

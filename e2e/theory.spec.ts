@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { loginWithYandex } from './helpers';
+import { loginWithYandex, openHeaderLink } from './helpers';
 
 const ticketPath = join(dirname(fileURLToPath(import.meta.url)), '../src/data/ticket-1.json');
 const questions = JSON.parse(readFileSync(ticketPath, 'utf8')) as Array<{
@@ -17,7 +17,7 @@ test.describe('Theory mode', () => {
   }) => {
     await loginWithYandex(page);
 
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await expect(page.getByRole('heading', { name: 'Билеты' })).toBeVisible();
 
     await page.getByRole('link', { name: /^Билет 1 / }).click();

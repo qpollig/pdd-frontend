@@ -3,12 +3,16 @@ import { nextTick, onMounted, onUnmounted, ref, watch, type ComponentPublicInsta
 import type { Question } from '../../domain/question';
 import type { QuestionState } from '../../types/ticket';
 
-const props = defineProps<{
-  questions: Question[];
-  questionStates: QuestionState[];
-  currentIndex: number;
-  concealResults?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    questions: Question[];
+    questionStates: QuestionState[];
+    currentIndex: number;
+    concealResults?: boolean;
+    variant?: 'scroll' | 'sidebar';
+  }>(),
+  { variant: 'scroll' },
+);
 
 const emit = defineEmits<{ select: [index: number] }>();
 
@@ -31,19 +35,9 @@ function setItemRef(el: Element | ComponentPublicInstance | null, index: number)
   itemRefs[index] = el as HTMLLIElement | null;
 }
 
-function isDesktopNav() {
-  return typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
-}
-
 function fitTrack() {
   const wrap = trackWrap.value;
   if (!wrap) return;
-
-  if (isDesktopNav()) {
-    trackWidth.value = null;
-    nextTick(updateScrollHints);
-    return;
-  }
 
   const available = wrap.clientWidth;
   const count = Math.max(1, Math.floor((available - PEEK) / ITEM_STRIDE));
@@ -125,11 +119,53 @@ function itemClasses(status: QuestionState['status'], isCurrent: boolean) {
 </script>
 
 <template>
-  <div class="flex items-center gap-1 lg:block">
+  <nav
+    v-if="variant === 'sidebar'"
+    aria-label="Навигация по вопросам билета"
+  >
+    <ul class="grid w-fit grid-cols-2 gap-2">
+      <li v-for="(q, index) in questions" :key="q.id">
+        <button
+          type="button"
+          class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl text-sm font-bold outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+          :class="itemClasses(questionStates[index]?.status ?? 'unanswered', index === currentIndex)"
+          :aria-current="index === currentIndex ? 'true' : undefined"
+          :aria-label="`Вопрос ${index + 1}${statusLabel(questionStates[index]?.status ?? 'unanswered')}`"
+          @click="emit('select', index)"
+        >
+          <svg
+            v-if="!concealResults && questionStates[index]?.status === 'correct'"
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            aria-hidden="true"
+          >
+            <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <svg
+            v-else-if="!concealResults && questionStates[index]?.status === 'incorrect'"
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+            aria-hidden="true"
+          >
+            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+          </svg>
+          <span v-else>{{ index + 1 }}</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+
+  <div v-else class="flex items-center gap-1">
     <button
       v-show="hasOverflow"
       type="button"
-      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30 lg:hidden"
+      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30"
       :disabled="!canScrollLeft"
       aria-label="Прокрутить список вопросов назад"
       @click="scrollNav(-1)"
@@ -138,15 +174,15 @@ function itemClasses(status: QuestionState['status'], isCurrent: boolean) {
         <path d="M15 18l-6-6 6-6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>
-    <div ref="trackWrap" class="relative min-w-0 flex-1 lg:flex-none">
+    <div ref="trackWrap" class="relative min-w-0 flex-1">
       <nav
         ref="scroller"
         aria-label="Навигация по вопросам билета"
-        class="snap-x snap-proximity overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] lg:w-auto lg:overflow-visible [&::-webkit-scrollbar]:hidden"
+        class="snap-x snap-proximity overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         :style="trackWidth != null ? { width: `${trackWidth}px` } : undefined"
         @scroll.passive="updateScrollHints"
       >
-        <ul class="flex w-max gap-2 py-2 lg:grid lg:w-fit lg:grid-cols-10 lg:justify-items-center lg:mx-auto lg:py-2">
+        <ul class="flex w-max gap-2 py-2">
           <li
             v-for="(q, index) in questions"
             :key="q.id"
@@ -192,7 +228,7 @@ function itemClasses(status: QuestionState['status'], isCurrent: boolean) {
     <button
       v-show="hasOverflow"
       type="button"
-      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30 lg:hidden"
+      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30"
       :disabled="!canScrollRight"
       aria-label="Прокрутить список вопросов вперёд"
       @click="scrollNav(1)"

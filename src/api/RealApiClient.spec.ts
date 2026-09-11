@@ -25,6 +25,32 @@ function mockFetchOnce(body: unknown) {
   });
 }
 
+describe('RealApiClient request timeout', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('rejects with NETWORK_ERROR instead of hanging forever when fetch never settles', async () => {
+    vi.useFakeTimers();
+    // Real fetch() rejects with an AbortError once its signal aborts — mimic that instead of
+    // ever resolving, so the test proves the timeout is what ends the request, not the mock.
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted', 'AbortError')));
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new RealApiClient('http://backend.example');
+
+    const pending = client.getCurrentUser();
+    const assertion = expect(pending).rejects.toThrow(/NETWORK_ERROR/);
+    await vi.runAllTimersAsync();
+    await assertion;
+  });
+});
+
 describe('RealApiClient.exchangeOAuthCode', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

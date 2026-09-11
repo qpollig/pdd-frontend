@@ -16,9 +16,11 @@ test.describe('Dashboard hierarchy', () => {
     await expect(primary).toBeVisible();
 
     await expect(page.getByRole('button', { name: 'Ошибки' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Экзамен ГИБДД' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Билеты' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Получить Premium-доступ' })).toBeVisible();
+    // Билеты/Экзамен ГИБДД live only in the header nav now — no duplicate CTA on the dashboard.
+    const nav = page.getByRole('navigation', { name: 'Основная навигация' });
+    await expect(nav.getByRole('link', { name: 'Билеты' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Экзамен ГИБДД' })).toBeVisible();
 
     await primary.click();
     await expect(page.getByRole('heading', { name: /Билет 1/ })).toBeVisible();
@@ -73,28 +75,13 @@ test.describe('Dashboard error/favorites counters (D2)', () => {
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
   });
 
-  test('Экзамен stays enabled regardless of errors_count and favorites_count', async ({ page }) => {
-    await page.goto('./auth?errors=none');
-    await page.getByRole('button', { name: 'Войти через Яндекс' }).click();
-    await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
-
-    // Both counters are 0 here — Экзамен must not pick up D2's disabled condition.
-    await expect(page.getByRole('button', { name: 'Ошибки' })).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Избранное' })).toBeDisabled();
-
-    const examButton = page.getByRole('button', { name: 'Экзамен ГИБДД' });
-    await expect(examButton).toBeEnabled();
-    await examButton.click();
-    await expect(page).toHaveURL(/exam/);
-  });
-
   test('favoriting a question updates the Dashboard badge from server state, not a local counter', async ({
     page,
   }) => {
     await loginWithYandex(page);
     await expect(page.getByRole('button', { name: 'Избранное' })).toBeDisabled();
 
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await page.getByRole('link', { name: /^Билет 1 / }).click();
     await page.getByRole('button', { name: 'Добавить в избранное' }).click();
     await expect(page.getByRole('button', { name: 'В избранном' })).toBeVisible();

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { loginWithYandex } from './helpers';
+import { loginWithYandex, openHeaderLink } from './helpers';
 
 const ticketPath = join(dirname(fileURLToPath(import.meta.url)), '../src/data/ticket-1.json');
 const questions = JSON.parse(readFileSync(ticketPath, 'utf8')) as Array<{
@@ -28,7 +28,7 @@ test.describe('Exam ГИБДД mode', () => {
     page,
   }) => {
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Экзамен ГИБДД' }).click();
+    await openHeaderLink(page, 'Экзамен ГИБДД');
 
     await expect(page.getByRole('heading', { name: 'Экзамен ГИБДД' })).toBeVisible();
     await expect(page.getByText('Теория', { exact: true })).toHaveCount(0);
@@ -63,7 +63,7 @@ test.describe('Exam ГИБДД mode', () => {
 
   test('wrong answer requires +5 extra questions then result', async ({ page }) => {
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Экзамен ГИБДД' }).click();
+    await openHeaderLink(page, 'Экзамен ГИБДД');
     await expect(page.getByRole('heading', { name: 'Экзамен ГИБДД' })).toBeVisible();
 
     const first = questions[0];
@@ -94,7 +94,7 @@ test.describe('Exam ГИБДД mode', () => {
 
   test('a mistake on an extra question force-ends the exam immediately with its own message', async ({ page }) => {
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Экзамен ГИБДД' }).click();
+    await openHeaderLink(page, 'Экзамен ГИБДД');
     await expect(page.getByRole('heading', { name: 'Экзамен ГИБДД' })).toBeVisible();
 
     const first = questions[0];
@@ -129,7 +129,7 @@ test.describe('Exam ГИБДД mode', () => {
       (window as Window & { __AV_TEST_EXAM_SECONDS__?: number }).__AV_TEST_EXAM_SECONDS__ = 2;
     });
     await loginWithYandex(page);
-    await page.getByRole('button', { name: 'Экзамен ГИБДД' }).click();
+    await openHeaderLink(page, 'Экзамен ГИБДД');
     await expect(page.getByRole('timer')).toBeVisible();
     const result = page.getByRole('dialog', { name: 'Результат экзамена' });
     await expect(result).toBeVisible({ timeout: 8000 });

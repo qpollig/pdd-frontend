@@ -6,7 +6,7 @@ test.describe('B2C shell navigation', () => {
     await loginWithYandex(page);
     await expect(page.getByRole('heading', { name: 'Главная' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Билеты' }).click();
+    await openHeaderLink(page, 'Билеты');
     await expect(page.getByRole('heading', { name: 'Билеты' })).toBeVisible();
     await expect(page.getByRole('link', { name: /^Билет 1 / })).toBeVisible();
 

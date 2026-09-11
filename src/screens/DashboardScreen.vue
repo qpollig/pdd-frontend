@@ -40,20 +40,12 @@ function startQuick() {
   void router.push({ name: 'ticket-session', params: { ticketId }, query: { mode: 'theory' } });
 }
 
-function openTheory() {
-  void router.push({ name: 'tickets', query: { mode: 'theory' } });
-}
-
 /** D2: server-computed counters (UserOut.errors_count/favorites_count) drive both the badge and the disabled gate. */
 const errorsCount = computed(() => session.user?.errors_count ?? 0);
 const favoritesCount = computed(() => session.user?.favorites_count ?? 0);
 
 function openErrors() {
   void router.push({ name: 'errors-session', query: { mode: 'errors' } });
-}
-
-function openExam() {
-  void router.push({ name: 'exam-gibdd' });
 }
 
 function openFavorites() {
@@ -121,7 +113,6 @@ const ticketsPercent = computed(() => {
           </p>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <AppButton class="w-full sm:w-auto" @click="startQuick">Начать обучение</AppButton>
-            <AppButton variant="ghost" class="w-full sm:w-auto" @click="openTheory">Билеты</AppButton>
           </div>
         </div>
       </section>
@@ -189,14 +180,6 @@ const ticketsPercent = computed(() => {
             >
               {{ errorsCount }}
             </span>
-          </AppButton>
-          <AppButton variant="secondary" class="w-full sm:w-auto" @click="openExam">
-            <svg viewBox="0 0 24 24" class="mr-2 h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <circle cx="12" cy="13" r="8" />
-              <path d="M12 9v4l2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
-              <path d="M9 2h6" stroke-linecap="round" />
-            </svg>
-            Экзамен ГИБДД
           </AppButton>
           <AppButton
             variant="secondary"

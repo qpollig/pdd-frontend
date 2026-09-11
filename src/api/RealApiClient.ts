@@ -39,6 +39,9 @@ import type {
 
 const DEFAULT_BASE_URL = 'http://localhost:8000';
 
+/** Без таймаута зависший fetch() никогда не резолвится/реджектится — экран виснет на спиннере навсегда. */
+const REQUEST_TIMEOUT_MS = 20_000;
+
 /**
  * Единый формат ошибки backend'а: {"detail": "КОД_ОШИБКИ"} (см. docs/API_ERRORS.md).
  * `status` — HTTP-статус ответа; 0 для случаев без реального HTTP-ответа (см. checkout()).
@@ -80,19 +83,25 @@ export class RealApiClient implements ApiClient {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (auth && this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;
 
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS);
+
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: timeoutController.signal,
       });
     } catch (cause) {
-      // Backend недоступен / CORS-блок / оффлайн — отличаем от прикладных ошибок (ApiError).
+      // Backend недоступен / CORS-блок / оффлайн / таймаут — отличаем от ApiError.
       const reason = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`NETWORK_ERROR: не удалось обратиться к ${this.baseUrl}${path} (${reason})`, {
         cause,
       });
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     if (response.status === 204) {

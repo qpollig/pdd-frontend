@@ -121,7 +121,11 @@ function topicPercent(topic: Topic): number {
           >
             <p class="font-semibold">Билет {{ ticket.number }}</p>
             <p class="mt-1 text-xs text-text-secondary">{{ categoryLabel(ticket.category) }}</p>
-            <p v-if="progress.ticketStatus(ticket.id) !== 'not_started'" class="mt-1 text-xs font-medium">
+            <p
+              class="mt-1 text-xs font-medium"
+              :class="{ invisible: progress.ticketStatus(ticket.id) === 'not_started' }"
+              aria-hidden="true"
+            >
               {{ TICKET_STATUS_LABELS[progress.ticketStatus(ticket.id)] }}
             </p>
           </RouterLink>

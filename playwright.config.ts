@@ -12,6 +12,11 @@ export default defineConfig({
     command: 'npm run dev -- --host 127.0.0.1 --port 5177',
     url: 'http://127.0.0.1:5177/',
     reuseExistingServer: false,
+    // e2e рассчитаны на MockApiClient — .env.local не должен сюда протекать.
+    env: {
+      VITE_USE_MOCK_API: 'true',
+      VITE_MOCK_LOGIN: 'false',
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });

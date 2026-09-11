@@ -1,31 +1,42 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { mediaPlaceholderText } from './mediaPlaceholder';
+import { mediaPlaceholderText, selectedMediaKind } from './mediaPlaceholder';
 
-const props = defineProps<{ image: string | null }>();
+const props = defineProps<{ image: string | null; video: string | null }>();
 
 const errored = ref(false);
 watch(
-  () => props.image,
+  () => [props.image, props.video],
   () => {
     errored.value = false;
   },
 );
 
-const placeholderText = computed(() => mediaPlaceholderText(props.image, errored.value));
+const mediaKind = computed(() => selectedMediaKind(props.image, props.video));
+const placeholderText = computed(() => mediaPlaceholderText(props.image, props.video, errored.value));
 </script>
 
 <template>
+  <!-- aspect-[638/238] mirrors the fixture bank's actual dashcam-photo ratio (measured from a real
+       question image), so the video player and the empty/error placeholder reserve the same box
+       size a real photo would — not the much taller 16:9 default. -->
   <div class="overflow-hidden rounded-card border border-border bg-surface-muted">
     <img
-      v-if="!placeholderText"
+      v-if="!placeholderText && mediaKind === 'image'"
       :src="image!"
       alt=""
       class="block max-h-[70vh] w-full object-contain"
       fetchpriority="high"
       @error="errored = true"
     />
-    <div v-else class="flex aspect-video flex-col items-center justify-center gap-2 px-4 text-center">
+    <video
+      v-else-if="!placeholderText && mediaKind === 'video'"
+      :src="video!"
+      controls
+      class="block aspect-[638/238] max-h-[70vh] w-full bg-black object-contain"
+      @error="errored = true"
+    />
+    <div v-else class="flex aspect-[638/238] flex-col items-center justify-center gap-2 px-4 text-center">
       <svg
         viewBox="0 0 24 24"
         class="h-8 w-8 text-text-secondary"

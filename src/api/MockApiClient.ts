@@ -194,6 +194,20 @@ function answerId(questionId: string, orderIndex: number): string {
 /** Fixture-data sentinel for "this question has no photo" (see types/ticket.ts FixtureQuestion.image) — not a real URL. */
 const NO_IMAGE_SENTINEL = './images/no_image.jpg';
 
+/**
+ * Test-only mock video (small, CORS-enabled traffic footage from Wikimedia Commons) — there is no
+ * real video CDN yet, this just makes the <video> player exercisable in mock mode without a backend.
+ */
+const MOCK_VIDEO_URL = 'https://upload.wikimedia.org/wikipedia/commons/f/fa/Cars_Passing_by_at_Night.webm';
+/**
+ * Fixture questions that carry the mock video: one with no image (video-only branch), one that
+ * also has a real image (exercises the image-over-video priority rule).
+ */
+const MOCK_VIDEO_QUESTION_IDS = new Set([
+  '627f7626e7460498d50c0570c86d82f4',
+  '050bbd8d2ba901e0b895141adadf7a60',
+]);
+
 /** Inverse of answerId(); returns -1 for an answer id that doesn't belong to this question. */
 function answerIndexFromId(questionId: string, candidateAnswerId: string): number {
   const prefix = `${questionId}${ANSWER_ID_INFIX}`;
@@ -219,7 +233,7 @@ function toQuestionOut(
     order_index: orderIndex,
     text: question.question,
     image_url: question.image && question.image !== NO_IMAGE_SENTINEL ? question.image : null,
-    video_url: null,
+    video_url: MOCK_VIDEO_QUESTION_IDS.has(question.id) ? MOCK_VIDEO_URL : null,
     explanation: revealCorrectness ? question.answer_tip : null,
     is_favorite: favoriteQuestionIds.has(question.id),
     answers: question.answers.map((answer, index) => ({
