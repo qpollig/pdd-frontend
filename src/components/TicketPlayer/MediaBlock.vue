@@ -25,7 +25,7 @@ const placeholderText = computed(() => mediaPlaceholderText(props.image, props.v
       v-if="!placeholderText && mediaKind === 'image'"
       :src="image!"
       alt=""
-      class="block max-h-[70vh] w-full object-contain"
+      class="block aspect-[638/238] max-h-[70vh] w-full object-contain"
       fetchpriority="high"
       @error="errored = true"
     />

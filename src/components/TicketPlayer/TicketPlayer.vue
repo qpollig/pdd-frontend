@@ -333,7 +333,7 @@ function continueToPaywall() {
     <div
       class="mx-auto w-full max-w-[1200px] px-4 pb-4 pt-4 sm:px-6 sm:pb-6 sm:pt-6 lg:px-8 lg:pb-12 lg:pt-8 2xl:flex 2xl:items-start 2xl:gap-8"
     >
-      <aside class="hidden shrink-0 2xl:sticky 2xl:top-28 2xl:block">
+      <aside class="hidden w-24 shrink-0 2xl:sticky 2xl:top-28 2xl:block">
         <QuestionNav
           :questions="questions"
           :question-states="questionStates"
@@ -450,6 +450,8 @@ function continueToPaywall() {
         </div>
         </main>
       </div>
+
+      <div class="hidden w-24 shrink-0 2xl:block" aria-hidden="true" />
     </div>
 
     <PaywallModal :open="isPaywallOpen" @close="closePaywall" @continue="continueToPaywall" />
