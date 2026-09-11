@@ -28,8 +28,14 @@ const hasOverflow = ref(false);
 const canScrollLeft = ref(false);
 const canScrollRight = ref(false);
 
+const sidebarNav = ref<HTMLElement | null>(null);
+const hasSidebarOverflow = ref(false);
+const canScrollUp = ref(false);
+const canScrollDown = ref(false);
+
 const itemRefs: (HTMLLIElement | null)[] = [];
 let resizeObserver: ResizeObserver | null = null;
+let sidebarResizeObserver: ResizeObserver | null = null;
 
 function setItemRef(el: Element | ComponentPublicInstance | null, index: number) {
   itemRefs[index] = el as HTMLLIElement | null;
@@ -60,26 +66,50 @@ function scrollNav(direction: -1 | 1) {
   el.scrollBy({ left: direction * Math.max(el.clientWidth * 0.75, 132), behavior: 'smooth' });
 }
 
+function updateSidebarScrollHints() {
+  const el = sidebarNav.value;
+  if (!el) return;
+  const maxScroll = el.scrollHeight - el.clientHeight;
+  hasSidebarOverflow.value = maxScroll > 1;
+  canScrollUp.value = el.scrollTop > 1;
+  canScrollDown.value = el.scrollTop < maxScroll - 1;
+}
+
+function scrollSidebarNav(direction: -1 | 1) {
+  const el = sidebarNav.value;
+  if (!el) return;
+  el.scrollBy({ top: direction * Math.max(el.clientHeight * 0.75, 132), behavior: 'smooth' });
+}
+
 watch(
   () => props.currentIndex,
   (index) => {
     nextTick(() => {
       itemRefs[index]?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       updateScrollHints();
+      updateSidebarScrollHints();
     });
   },
 );
 
 onMounted(() => {
   nextTick(fitTrack);
+  nextTick(updateSidebarScrollHints);
   const wrap = trackWrap.value;
-  if (!wrap || typeof ResizeObserver === 'undefined') return;
-  resizeObserver = new ResizeObserver(fitTrack);
-  resizeObserver.observe(wrap);
+  if (wrap && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(fitTrack);
+    resizeObserver.observe(wrap);
+  }
+  const sidebar = sidebarNav.value;
+  if (sidebar && typeof ResizeObserver !== 'undefined') {
+    sidebarResizeObserver = new ResizeObserver(updateSidebarScrollHints);
+    sidebarResizeObserver.observe(sidebar);
+  }
 });
 
 onUnmounted(() => {
   resizeObserver?.disconnect();
+  sidebarResizeObserver?.disconnect();
 });
 
 function statusLabel(status: QuestionState['status']) {
@@ -119,52 +149,79 @@ function itemClasses(status: QuestionState['status'], isCurrent: boolean) {
 </script>
 
 <template>
-  <nav
-    v-if="variant === 'sidebar'"
-    aria-label="Навигация по вопросам билета"
-    class="max-h-[calc(100vh-9rem)] overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-  >
-    <ul class="grid w-fit grid-cols-2 gap-2">
-      <li
-        v-for="(q, index) in questions"
-        :key="q.id"
-        :ref="(el) => setItemRef(el, index)"
-      >
-        <button
-          type="button"
-          class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl text-sm font-bold outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
-          :class="itemClasses(questionStates[index]?.status ?? 'unanswered', index === currentIndex)"
-          :aria-current="index === currentIndex ? 'true' : undefined"
-          :aria-label="`Вопрос ${index + 1}${statusLabel(questionStates[index]?.status ?? 'unanswered')}`"
-          @click="emit('select', index)"
+  <div v-if="variant === 'sidebar'" class="flex flex-col items-center gap-1">
+    <button
+      v-show="hasSidebarOverflow"
+      type="button"
+      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30"
+      :disabled="!canScrollUp"
+      aria-label="Прокрутить список вопросов вверх"
+      @click="scrollSidebarNav(-1)"
+    >
+      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M6 15l6-6 6 6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <nav
+      ref="sidebarNav"
+      aria-label="Навигация по вопросам билета"
+      class="max-h-[calc(100vh-15rem)] overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      @scroll.passive="updateSidebarScrollHints"
+    >
+      <ul class="grid w-fit grid-cols-2 gap-2">
+        <li
+          v-for="(q, index) in questions"
+          :key="q.id"
+          :ref="(el) => setItemRef(el, index)"
         >
-          <svg
-            v-if="!concealResults && questionStates[index]?.status === 'correct'"
-            viewBox="0 0 24 24"
-            class="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            aria-hidden="true"
+          <button
+            type="button"
+            class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl text-sm font-bold outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
+            :class="itemClasses(questionStates[index]?.status ?? 'unanswered', index === currentIndex)"
+            :aria-current="index === currentIndex ? 'true' : undefined"
+            :aria-label="`Вопрос ${index + 1}${statusLabel(questionStates[index]?.status ?? 'unanswered')}`"
+            @click="emit('select', index)"
           >
-            <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <svg
-            v-else-if="!concealResults && questionStates[index]?.status === 'incorrect'"
-            viewBox="0 0 24 24"
-            class="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            aria-hidden="true"
-          >
-            <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
-          </svg>
-          <span v-else>{{ index + 1 }}</span>
-        </button>
-      </li>
-    </ul>
-  </nav>
+            <svg
+              v-if="!concealResults && questionStates[index]?.status === 'correct'"
+              viewBox="0 0 24 24"
+              class="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              aria-hidden="true"
+            >
+              <path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <svg
+              v-else-if="!concealResults && questionStates[index]?.status === 'incorrect'"
+              viewBox="0 0 24 24"
+              class="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6L6 18" stroke-linecap="round" />
+            </svg>
+            <span v-else>{{ index + 1 }}</span>
+          </button>
+        </li>
+      </ul>
+    </nav>
+    <button
+      v-show="hasSidebarOverflow"
+      type="button"
+      class="relative z-10 flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-white text-text-primary shadow-sm outline-none transition duration-200 ease-out hover:bg-accent/10 active:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary disabled:cursor-default disabled:opacity-30"
+      :disabled="!canScrollDown"
+      aria-label="Прокрутить список вопросов вниз"
+      @click="scrollSidebarNav(1)"
+    >
+      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+  </div>
 
   <div v-else class="flex items-center gap-1">
     <button
