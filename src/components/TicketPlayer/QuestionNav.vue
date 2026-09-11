@@ -122,9 +122,14 @@ function itemClasses(status: QuestionState['status'], isCurrent: boolean) {
   <nav
     v-if="variant === 'sidebar'"
     aria-label="Навигация по вопросам билета"
+    class="max-h-[calc(100vh-9rem)] overflow-y-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
   >
     <ul class="grid w-fit grid-cols-2 gap-2">
-      <li v-for="(q, index) in questions" :key="q.id">
+      <li
+        v-for="(q, index) in questions"
+        :key="q.id"
+        :ref="(el) => setItemRef(el, index)"
+      >
         <button
           type="button"
           class="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl text-sm font-bold outline-none transition duration-200 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-text-primary"
